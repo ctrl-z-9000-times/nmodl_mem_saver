@@ -1,3 +1,5 @@
+from pathlib import Path
+from types import SimpleNamespace
 import argparse
 import math
 import nmodl.ast
@@ -6,10 +8,10 @@ import nmodl.symtab
 import numpy as np
 import re
 import textwrap
+
+from utils import *
 import nmodl_to_python
-from pathlib import Path
-from types import SimpleNamespace
-STR = lambda x: str(x).strip() # nmodl sometimes leaves trailing whitespace on stuff.
+import rw_patterns
 
 """
 TODO docs
@@ -27,9 +29,6 @@ parser.add_argument('output_path', type=str,
         help="output filename or directory for nmodl files")
 
 parser.add_argument('-v', '--verbose', action='count')
-
-parser.add_argument('-x', '--strict', action='store_true',
-        help="Maintain strict compatibility with the original NEURON semantics.")
 
 parser.add_argument('--celsius', type=float, default=None,
         help="")
@@ -111,15 +110,7 @@ for input_file, output_file in zip(input_path, output_path):
             procedures)
     # Split the document into its top-level blocks for easier manipulation.
     blocks_list = [SimpleNamespace(node=x, text=nmodl.to_nmodl(x)) for x in AST.blocks]
-    blocks      = {} # Indexed by block name.
-    for x in blocks_list:
-        name = getattr(x.node, 'name', None)
-        if name is None:
-            try:
-                name = x.node.get_nmodl_name()
-            except RuntimeError:
-                name = x.node.get_node_type_name()
-        blocks[STR(name)] = x
+    blocks      = {get_block_name(x.node): x for x in blocks_list}
 
     # Inline the parameters.
     substitutions = {}
@@ -136,10 +127,11 @@ for input_file, output_file in zip(input_path, output_path):
     # Inline celsius if it's given.
     if args.celsius is not None:
         substitutions['celsius'] = (args.celsius, 'degC')
-        print_verbose(f'inline and remove parameter: celsius = {args.celsius}')
+        print_verbose(f'inline and remove temperature: celsius = {args.celsius}')
 
     # Inline Q10. Detect and inline assigned variables with a constant value
     # which is set in the initial block.
+    initial_assigned = {}
     if initial_block := blocks.get('INITIAL', None):
         x = nmodl_to_python.PyGenerator()
         x.visit_initial_block(initial_block.node)
@@ -161,34 +153,14 @@ for input_file, output_file in zip(input_path, output_path):
             raise
         # Filter out any assignments that were made with unknown input values.
         initial_scope = dict(x for x in initial_scope.items() if not math.isnan(x[1]))
-        # 
-        class WriteDetector(nmodl.dsl.visitor.AstVisitor):
-            """ Determine which symbols each top-level block writes to. """
-            def visit_program(self, node):
-                self.current_block = None
-                self.writes_to = {} # Maps from block name to set of variable names.
-                node.visit_children(self)
-
-            def visit_statement_block(self, node): # Top level code blocks
-                if node.parent.is_procedure_block():
-                    self.current_block = STR(node.parent.name)
-                else:
-                    self.current_block = STR(node.parent.get_nmodl_name())
-                node.visit_children(self)
-
-            def visit_binary_expression(self, node):
-                if node.op.eval() == '=':
-                    name = STR(node.lhs.name.get_node_name())
-                    self.writes_to.setdefault(self.current_block, set()).add(name)
         # Do not inline variables if they are written to in other blocks besides the INITIAL block.
-        x = WriteDetector()
+        x = rw_patterns.WriteDetector()
         x.visit_program(AST)
         x.writes_to.pop('INITIAL', None)
         runtime_writes_to = set()
         for block_name, writes_to in x.writes_to.items():
             runtime_writes_to.update(writes_to)
         # 
-        initial_assigned = {}
         for name in ((assigned_vars & set(initial_scope)) - runtime_writes_to):
             # TODO: lookup the units in the symtab
             value = initial_scope[name]
@@ -200,61 +172,7 @@ for input_file, output_file in zip(input_path, output_path):
     # Convert assigned variables into local variables as able.
     localize_candidates = set(assigned_vars) - set(external_vars)
     # Search for variables with no persistent state.
-    class OverwriteDetector(nmodl.dsl.visitor.AstVisitor):
-        """ This visitor detects when a variable is written to without first being read from. """
-        def visit_program(self, node):
-            self.read_first  = set()
-            self.write_first = set()
-            # Also record which blocks each variable is present in.
-            self.current_block = None
-            self.blocks = {} # Maps from variable name to set of block names.
-            super().visit_program(node)
-            self.overwrites = self.write_first - self.read_first
-
-        def visit_neuron_block(self, node):
-            pass
-
-        def visit_function_block(self, node):
-            pass
-
-        def visit_statement_block(self, node): # Top level code blocks
-            # 
-            if name := getattr(node.parent, 'name', None):
-                self.current_block = STR(name)
-            else:
-                self.current_block = STR(node.parent.get_nmodl_name())
-            self.variables_seen = set()
-            node.accept(self)
-
-        def first_access(self, name):
-            if name not in localize_candidates: return False # Optimization.
-            first_access = name not in self.variables_seen
-            if first_access:
-                self.variables_seen.add(name)
-                self.blocks.setdefault(name, set()).add(self.current_block)
-            return first_access
-
-        # TODO: Consider special cases for "if" statements?
-
-        def visit_binary_expression(self, node):
-            # Mark the left hand side variable of this assignment as being written to.
-            if node.op.eval() == '=':
-                name = STR(node.lhs.name.get_node_name())
-                if self.first_access(name):
-                    self.write_first.add(name)
-                # And recursively mark all variables on right hand side as being read from.
-                node.rhs.accept(self)
-            else:
-                node.lhs.accept(self)
-                node.rhs.accept(self)
-
-        def visit_var_name(self, node):
-            # Mark this variable as being read from.
-            name = STR(node.name.get_node_name())
-            if self.first_access(name):
-                self.read_first.add(name)
-
-    x = OverwriteDetector()
+    x = rw_patterns.OverwriteDetector()
     x.visit_program(AST)
     localize = localize_candidates - x.read_first
     for name in localize:
@@ -285,7 +203,7 @@ for input_file, output_file in zip(input_path, output_path):
     if args.celsius is not None:
         if block := blocks.get('INITIAL', None):
             f"VERBATIM\n    assert(celsius == {args.celsius});\n    ENDVERBATIM\n"
-            # block.text = 1/0
+            # block.text = 1/0 # TODO!
 
     # Substitute the parameters with their values.
     for block in blocks_list:
@@ -299,7 +217,7 @@ for input_file, output_file in zip(input_path, output_path):
         if block.node.is_assigned_block(): continue
         for name, value in substitutions.items():
             if block.node.is_initial_block() and name in initial_assigned:
-                pass # The assignment to this variable is still present.
+                pass # The assignment to this variable is still present, it's converted to a local variable.
             else:
                 if value[1]:
                     value = f'{value[0]}({value[1]})'
@@ -309,7 +227,8 @@ for input_file, output_file in zip(input_path, output_path):
 
     # Insert new LOCAL statements to replace the assigned variables.
     new_locals = {} # Maps from block name to set of names of new local variables.
-    new_locals.setdefault('INITIAL', set()).update(initial_assigned.keys())
+    if initial_assigned:
+        new_locals['INITIAL'] = set(initial_assigned.keys())
     for name in localize:
         for block in x.blocks[name]:
             new_locals.setdefault(block, set()).add(name)
@@ -321,6 +240,7 @@ for input_file, output_file in zip(input_path, output_path):
         body  = textwrap.indent(body, '    ')
         block.text = signature + '{\n    LOCAL ' + names + '\n    {' + body + '\n}'
 
+    # Join the top-level blocks back into one big string and save it to the output file.
     nmodl_text = '\n\n'.join(x.text for x in blocks_list) + '\n'
     with output_file.open('w') as f:
         f.write(nmodl_text)
