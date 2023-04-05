@@ -90,7 +90,7 @@ for input_file, output_file in zip(input_path, output_path):
     nonspecific_vars    = get_vars_with_prop(sym_type.nonspecific_cur_var)
     range_vars          = get_vars_with_prop(sym_type.range_var)
     global_vars         = get_vars_with_prop(sym_type.global_var)
-    parameters          = get_vars_with_prop(sym_type.param_assign)
+    parameter_vars      = get_vars_with_prop(sym_type.param_assign)
     assigned_vars       = get_vars_with_prop(sym_type.assigned_definition)
     state_vars          = get_vars_with_prop(sym_type.state_var)
     functions           = get_vars_with_prop(sym_type.function_block)
@@ -108,49 +108,63 @@ for input_file, output_file in zip(input_path, output_path):
             state_vars |
             functions |
             procedures)
+    # Find all symbols that are referenced in VERBATIM blocks.
+    verbatim_vars = set()
+    for stmt in lookup(ANT.VERBATIM):
+        verbatim_vars.update(re.finditer(r'\b\w+\b', nmodl.to_nmodl(stmt)))
+    # Let's get this warning out of the way.
+    if assigned_vars & verbatim_vars:
+        print_verbose("warning: VERBATIM may prevent optimization")
     # Split the document into its top-level blocks for easier manipulation.
     blocks_list = [SimpleNamespace(node=x, text=nmodl.to_nmodl(x)) for x in AST.blocks]
     blocks      = {get_block_name(x.node): x for x in blocks_list}
 
     # Inline the parameters.
-    substitutions = {}
-    for name in (parameters - external_vars):
+    parameters = {}
+    for name in (parameter_vars - external_vars):
         for node in symtab.lookup(name).get_nodes():
             if node.is_param_assign() and node.value is not None:
                 value = float(STR(node.value))
                 if node.unit is not None:
-                    substitutions[name] = (value, STR(node.unit.name))
+                    parameters[name] = (value, STR(node.unit.name))
                 else:
-                    substitutions[name] = (value, "")
-                print_verbose(f'inline and remove parameter: {name} = {value}')
+                    parameters[name] = (value, "")
+                print_verbose(f'inline: {name} = {value}')
 
     # Inline celsius if it's given.
     if args.celsius is not None:
-        substitutions['celsius'] = (args.celsius, 'degC')
-        print_verbose(f'inline and remove temperature: celsius = {args.celsius}')
+        parameters['celsius'] = (args.celsius, 'degC')
+        print_verbose(f'inline: celsius = {args.celsius}')
 
     # Inline Q10. Detect and inline assigned variables with a constant value
     # which is set in the initial block.
     initial_assigned = {}
     if initial_block := blocks.get('INITIAL', None):
+        # Convert the INITIAL block into python.
         x = nmodl_to_python.PyGenerator()
-        x.visit_initial_block(initial_block.node)
+        try:
+            x.visit_initial_block(initial_block.node)
+            can_exec = True
+        except nmodl_to_python.VerbatimError:
+            can_exec = False
+        # 
         global_scope  = {}
         initial_scope = {}
         # Represent unknown external input values as NaN's.
         for name in external_vars:
             global_scope[name] = math.nan
         # 
-        for name, value in substitutions.items():
+        for name, value in parameters.items():
             global_scope[name] = value[0]
         # 
-        try:
-            exec(x.pycode, global_scope, initial_scope)
-        except:
-            pycode = '\n'.join(str(i+1).rjust(2) + ": " + line for i, line in enumerate(x.pycode.split('\n'))) # Prepend line numbers.
-            print('While executing:')
-            print(pycode)
-            raise
+        if can_exec:
+            try:
+                exec(x.pycode, global_scope, initial_scope)
+            except:
+                pycode = '\n'.join(str(i+1).rjust(2) + ": " + line for i, line in enumerate(x.pycode.split('\n'))) # Prepend line numbers.
+                print("While exec'ing:")
+                print(pycode)
+                raise
         # Filter out any assignments that were made with unknown input values.
         initial_scope = dict(x for x in initial_scope.items() if not math.isnan(x[1]))
         # Do not inline variables if they are written to in other blocks besides the INITIAL block.
@@ -161,22 +175,23 @@ for input_file, output_file in zip(input_path, output_path):
         for block_name, writes_to in x.writes_to.items():
             runtime_writes_to.update(writes_to)
         # 
-        for name in ((assigned_vars & set(initial_scope)) - runtime_writes_to):
+        for name in ((assigned_vars & set(initial_scope)) - runtime_writes_to - verbatim_vars):
             # TODO: lookup the units in the symtab
             value = initial_scope[name]
             initial_assigned[name] = (value, "")
-            print_verbose(f'make constant: {name} = {value}')
-
-        substitutions.update(initial_assigned)
+            print_verbose(f'inline: {name} = {value}')
 
     # Convert assigned variables into local variables as able.
-    localize_candidates = set(assigned_vars) - set(external_vars)
+    localize = set(assigned_vars) - set(external_vars)
+    # Check for verbatim statements referencing this variable, which I refuse to analyse.
+    localize -= verbatim_vars
     # Search for variables with no persistent state.
     x = rw_patterns.OverwriteDetector()
     x.visit_program(AST)
-    localize = localize_candidates - x.read_first
+    localize -= x.read_first
+    # 
     for name in localize:
-        print_verbose(f'converted from assigned to local: {name}')
+        print_verbose(f'convert from ASSIGNED to LOCAL: {name}')
 
     ############################################################################
 
@@ -184,7 +199,7 @@ for input_file, output_file in zip(input_path, output_path):
     if block := blocks.get('PARAMETER', None):
         new_lines = []
         for stmt in block.node.statements:
-            if not (stmt.is_param_assign() and STR(stmt.name) in substitutions):
+            if not (stmt.is_param_assign() and STR(stmt.name) in parameters):
                 stmt_nmodl = nmodl.to_nmodl(stmt)
                 new_lines.append(stmt_nmodl)
         block.text = 'PARAMETER {\n' + '\n'.join('    ' + x for x in new_lines) + '\n}'
@@ -207,6 +222,7 @@ for input_file, output_file in zip(input_path, output_path):
 
     # Substitute the parameters with their values.
     for block in blocks_list:
+        # Search for the blocks which contain code.
         if block.node.is_model(): continue
         if block.node.is_block_comment(): continue
         if block.node.is_neuron_block(): continue
@@ -215,15 +231,17 @@ for input_file, output_file in zip(input_path, output_path):
         if block.node.is_param_block(): continue
         if block.node.is_state_block(): continue
         if block.node.is_assigned_block(): continue
-        for name, value in substitutions.items():
+        # 
+        substitutions = dict(parameters)
+        substitutions.update(initial_assigned)
+        for name, (value, units) in substitutions.items():
             if block.node.is_initial_block() and name in initial_assigned:
-                pass # The assignment to this variable is still present, it's converted to a local variable.
-            else:
-                if value[1]:
-                    value = f'{value[0]}({value[1]})'
-                else:
-                    value = f'{value[0]}'
-                block.text = re.sub(rf'\b{name}\b', value, block.text)
+                continue # The assignment to this variable is still present, it's just converted to a local variable.
+            # 
+            value = str(value)
+            if units:
+                value += f'({units})'
+            block.text = re.sub(rf'\b{name}\b', value, block.text)
 
     # Insert new LOCAL statements to replace the assigned variables.
     new_locals = {} # Maps from block name to set of names of new local variables.

@@ -5,6 +5,8 @@ https://bluebrain.github.io/nmodl/html/notebooks/nmodl-python-tutorial.html#Easy
 import textwrap
 import nmodl.dsl
 
+class VerbatimError(ValueError): pass
+
 class PyGenerator(nmodl.dsl.visitor.AstVisitor):
     def __init__(self):
         super().__init__()
@@ -68,3 +70,5 @@ class PyGenerator(nmodl.dsl.visitor.AstVisitor):
     def visit_double(self, node):
         self.pycode += nmodl.to_nmodl(node)
 
+    def visit_verbatim(self, node):
+        raise VerbatimError()

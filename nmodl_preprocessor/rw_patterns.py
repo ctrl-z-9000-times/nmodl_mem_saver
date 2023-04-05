@@ -40,7 +40,6 @@ class OverwriteDetector(nmodl.dsl.visitor.AstVisitor):
         node.accept(self)
 
     def first_access(self, name):
-        if name not in localize_candidates: return False # Optimization.
         first_access = name not in self.variables_seen
         if first_access:
             self.variables_seen.add(name)
