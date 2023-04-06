@@ -1,3 +1,11 @@
+"""
+TODO docs
+"""
+
+__version__ = "1.0.0"
+__author__ = "David McDougall <dam1784[at]rit.edu>"
+__license__ = "MIT"
+
 from pathlib import Path
 from types import SimpleNamespace
 import argparse
@@ -13,16 +21,7 @@ from utils import *
 import nmodl_to_python
 import rw_patterns
 
-"""
-TODO docs
-"""
-
-__version__ = "1.0.0"
-__author__ = "David McDougall <dam1784[at]rit.edu>"
-__license__ = "MIT"
-
-parser = argparse.ArgumentParser(
-        description="TODO",)
+parser = argparse.ArgumentParser(prog='python nmodl_preprocessor', description=__doc__,)
 
 parser.add_argument('input_path', type=str,
         help="input filename or directory of nmodl files")
