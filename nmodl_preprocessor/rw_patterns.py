@@ -3,10 +3,10 @@ from utils import *
 
 class WriteDetector(nmodl.dsl.visitor.AstVisitor):
     """ Determines which symbols each top-level block writes to. """
-    def visit_program(self, node):
+    def __init__(self):
         self.current_block = None
         self.writes_to = {} # Maps from block name to set of variable names.
-        node.visit_children(self)
+        super().__init__()
 
     def visit_statement_block(self, node): # Top level code blocks
         self.current_block = get_block_name(node.parent)
@@ -19,25 +19,43 @@ class WriteDetector(nmodl.dsl.visitor.AstVisitor):
 
 class OverwriteDetector(nmodl.dsl.visitor.AstVisitor):
     """ Determines which symbols are written to without first being read from. """
-    def visit_program(self, node):
+    def __init__(self):
+        super().__init__()
+        # Recored the program wide access patterns for each variable.
         self.read_first  = set()
         self.write_first = set()
+        self.variables_seen = set()
         # Also record which blocks each variable is present in.
         self.current_block = None
         self.blocks = {} # Maps from variable name to set of block names.
-        super().visit_program(node)
-        self.overwrites = self.write_first - self.read_first
+
+    def visit_program(self, node):
+        node.visit_children(self)
+
+    def visit_statement_block(self, node):
+        # Top level code blocks
+        if self.current_block is None:
+            self.current_block = get_block_name(node.parent)
+            self.variables_seen.clear()
+            node.accept(self)
+            self.current_block = None
 
     def visit_neuron_block(self, node):
-        pass
+        pass # Does not contain any source code.
 
     def visit_function_block(self, node):
-        pass
+        pass # Functions are pure and can't access assigned variables.
 
-    def visit_statement_block(self, node): # Top level code blocks
-        self.current_block = get_block_name(node.parent)
-        self.variables_seen = set()
-        node.accept(self)
+    def visit_if_statement(self, node):
+        node.condition.accept(self)
+        blocks = [node.get_statement_block()] + node.elseifs + [node.elses]
+        for x in blocks:
+            if x is not None:
+                inner = OverwriteDetector()
+                inner.variables_seen.update(self.variables_seen)
+                inner.visit_statement_block(x)
+                self.read_first.update(inner.read_first)
+                self.write_first.update(inner.write_first)
 
     def first_access(self, name):
         first_access = name not in self.variables_seen
@@ -46,19 +64,16 @@ class OverwriteDetector(nmodl.dsl.visitor.AstVisitor):
             self.blocks.setdefault(name, set()).add(self.current_block)
         return first_access
 
-    # TODO: Consider special cases for "if" statements?
-
     def visit_binary_expression(self, node):
-        # Mark the left hand side variable of this assignment as being written to.
         if node.op.eval() == '=':
+            # Recursively mark all variables on right hand side as being read from.
+            node.rhs.accept(self)
+            # Mark the left hand side variable of this assignment as being written to.
             name = STR(node.lhs.name.get_node_name())
             if self.first_access(name):
                 self.write_first.add(name)
-            # And recursively mark all variables on right hand side as being read from.
-            node.rhs.accept(self)
         else:
-            node.lhs.accept(self)
-            node.rhs.accept(self)
+            super().visit_binary_expression(node)
 
     def visit_var_name(self, node):
         # Mark this variable as being read from.
