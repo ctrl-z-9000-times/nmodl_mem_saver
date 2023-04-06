@@ -122,7 +122,10 @@ for input_file, output_file in zip(input_path, output_path):
             verbatim_vars.add(symbol.group())
     # Let's get this warning out of the way.
     if assigned_vars & verbatim_vars:
-        print_verbose("warning: VERBATIM may prevent optimization")
+        print_verbose('warning: VERBATIM may prevent optimization')
+    # 
+    rw = rw_patterns.RW_Visitor()
+    rw.visit_program(AST)
     # Split the document into its top-level blocks for easier manipulation.
     blocks_list = [SimpleNamespace(node=x, text=nmodl.to_nmodl(x)) for x in AST.blocks]
     blocks      = {get_block_name(x.node): x for x in blocks_list}
@@ -157,6 +160,7 @@ for input_file, output_file in zip(input_path, output_path):
             can_exec = False
         except nmodl_to_python.ComplexityError:
             can_exec = False
+            print_verbose('warning: complex INITIAL block may prevent optimization')
         # 
         global_scope  = {}
         initial_scope = {}
@@ -178,12 +182,10 @@ for input_file, output_file in zip(input_path, output_path):
         # Filter out any assignments that were made with unknown input values.
         initial_scope = dict(x for x in initial_scope.items() if not math.isnan(x[1]))
         # Do not inline variables if they are written to in other blocks besides the INITIAL block.
-        x = rw_patterns.WriteDetector()
-        x.visit_program(AST)
-        x.writes_to.pop('INITIAL', None)
         runtime_writes_to = set()
-        for block_name, writes_to in x.writes_to.items():
-            runtime_writes_to.update(writes_to)
+        for block_name, variables in rw.writes.items():
+            if block_name != 'INITIAL':
+                runtime_writes_to.update(variables)
         # 
         for name in ((assigned_vars & set(initial_scope)) - runtime_writes_to - verbatim_vars):
             # TODO: lookup the units in the symtab
@@ -195,10 +197,9 @@ for input_file, output_file in zip(input_path, output_path):
     localize = set(assigned_vars) - set(external_vars)
     # Check for verbatim statements referencing this variable, which I refuse to analyse.
     localize -= verbatim_vars
-    # Search for variables with no persistent state.
-    x = rw_patterns.OverwriteDetector()
-    x.visit_program(AST)
-    localize -= x.read_first
+    # Search for variables whose persistent state is ignored/overwritten.
+    for block_name, variables in rw.reads.items():
+        localize -= variables
     # 
     for name in localize:
         print_verbose(f'convert from ASSIGNED to LOCAL: {name}')
@@ -264,9 +265,10 @@ for input_file, output_file in zip(input_path, output_path):
     new_locals = {} # Maps from block name to set of names of new local variables.
     if initial_assigned:
         new_locals['INITIAL'] = set(initial_assigned.keys())
-    for name in localize:
-        for block in x.blocks[name]:
-            new_locals.setdefault(block, set()).add(name)
+    for block_name, variables in rw.writes.items():
+        localize_variables = localize & variables
+        if localize_variables:
+            new_locals.setdefault(block_name, set()).update(localize_variables)
     # 
     for block_name, local_names in new_locals.items():
         block = blocks[block_name]
