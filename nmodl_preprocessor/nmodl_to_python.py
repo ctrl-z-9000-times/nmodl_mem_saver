@@ -35,20 +35,6 @@ class PyGenerator(nmodl.dsl.visitor.AstVisitor):
         node.visit_children(self)
         self.pycode += "\n"
 
-    def visit_if_statement(self, node):
-        self.pycode += "if "
-        node.condition.accept(self)
-        self.pycode += ":\n"
-        node.get_statement_block().accept(self)
-        for n in node.elseifs:
-            n.accept(self)
-        if node.elses:
-            node.elses.accept(self)
-
-    def visit_else_statement(self, node):
-        self.pycode += "else:\n"
-        node.get_statement_block().accept(self)
-
     def visit_wrapped_expression(self, node):
         self.pycode += '('
         node.visit_children(self)
@@ -76,5 +62,10 @@ class PyGenerator(nmodl.dsl.visitor.AstVisitor):
     def visit_verbatim(self, node):
         raise VerbatimError()
 
+    def visit_if_statement(self, node):
+        # Can not guarantee correct results BC the condition might reference unknown values.
+        raise ComplexityError()
+
     def visit_while_statement(self, node):
+        # Can not guarantee correct results BC the condition might reference unknown values.
         raise ComplexityError()

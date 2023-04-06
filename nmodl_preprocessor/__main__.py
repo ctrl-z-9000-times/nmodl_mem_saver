@@ -245,9 +245,16 @@ for input_file, output_file in zip(input_path, output_path):
         substitutions = dict(parameters)
         substitutions.update(initial_assigned)
         for name, (value, units) in substitutions.items():
+            # The assignment to this variable is still present, it's just converted to a local variable.
             if block.node.is_initial_block() and name in initial_assigned:
-                continue # The assignment to this variable is still present, it's just converted to a local variable.
-            # 
+                continue
+            # Delete references to the symbol from TABLE statements.
+            table_regex = rf'\bTABLE\s+(\w+\s*,\s*)*\w+\s+DEPEND\s+(\w+\s*,\s*)*{name}\b'
+            block.text = re.sub(
+                    table_regex,
+                    lambda m: re.sub(rf',\s*{name}\b', '', m.group()),
+                    block.text)
+            # Substitued references to the symbol from general code.
             value = str(value)
             if units:
                 value += f'({units})'
