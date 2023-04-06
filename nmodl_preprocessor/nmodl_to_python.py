@@ -65,7 +65,10 @@ class PyGenerator(nmodl.dsl.visitor.AstVisitor):
     def visit_if_statement(self, node):
         # Can not guarantee correct results BC the condition might reference unknown values.
         raise ComplexityError()
+        # TODO: Typically if the condition is NaN then all legs of the if-else
+        # tree will also be NaN, so executing it should be harmless.
 
     def visit_while_statement(self, node):
         # Can not guarantee correct results BC the condition might reference unknown values.
         raise ComplexityError()
+

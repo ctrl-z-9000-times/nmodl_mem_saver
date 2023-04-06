@@ -103,6 +103,17 @@ for input_file, output_file in zip(input_path, output_path):
     procedures          = get_vars_with_prop(sym_type.procedure_block)
     solve_blocks        = get_vars_with_prop(sym_type.to_solve)
     inlined_blocks      = [x for x in (functions | procedures) if x not in solve_blocks]
+    # Find all symbols that are referenced in VERBATIM blocks.
+    verbatim_vars = set()
+    for stmt in lookup(ANT.VERBATIM):
+        for symbol in re.finditer(r'\b\w+\b', nmodl.to_nmodl(stmt)):
+            verbatim_vars.add(symbol.group())
+    # Let's get this warning out of the way. As chunks of C/C++ code, VERBATIM
+    # statements can not be analysed correctly. Assume that all symbols in
+    # VERBATIM blocks are both read from and written to. Do not attempt to
+    # alter the source code in any VERBATIM statements.
+    if (parameter_vars | assigned_vars | {'celsius'}) & verbatim_vars:
+        print_verbose('warning: VERBATIM may prevent optimization')
     # Find all symbols which are provided by or are visible to the larger NEURON simulation.
     external_vars = (
             neuron_vars |
@@ -115,14 +126,6 @@ for input_file, output_file in zip(input_path, output_path):
             pointer_vars |
             functions |
             procedures)
-    # Find all symbols that are referenced in VERBATIM blocks.
-    verbatim_vars = set()
-    for stmt in lookup(ANT.VERBATIM):
-        for symbol in re.finditer(r'\b\w+\b', nmodl.to_nmodl(stmt)):
-            verbatim_vars.add(symbol.group())
-    # Let's get this warning out of the way.
-    if assigned_vars & verbatim_vars:
-        print_verbose('warning: VERBATIM may prevent optimization')
     # 
     rw = rw_patterns.RW_Visitor()
     rw.visit_program(AST)
@@ -132,7 +135,7 @@ for input_file, output_file in zip(input_path, output_path):
 
     # Inline the parameters.
     parameters = {}
-    for name in (parameter_vars - external_vars):
+    for name in (parameter_vars - external_vars - verbatim_vars):
         for node in symtab.lookup(name).get_nodes():
             if node.is_param_assign() and node.value is not None:
                 value = float(STR(node.value))
@@ -142,10 +145,13 @@ for input_file, output_file in zip(input_path, output_path):
                     parameters[name] = (value, "")
                 print_verbose(f'inline parameter: {name} = {value}')
 
-    # Inline celsius if it's given.
+    # Inline celsius if it's given, overriding any default parameter value.
     if args.celsius is not None:
-        parameters['celsius'] = (args.celsius, 'degC')
-        print_verbose(f'inline temperature: celsius = {args.celsius}')
+        if 'celsius' in verbatim_vars:
+            args.celsius = None # Can not inline into VERBATIM blocks.
+        else:
+            parameters['celsius'] = (args.celsius, 'degC')
+            print_verbose(f'inline temperature: celsius = {args.celsius}')
 
     # Inline Q10. Detect and inline assigned variables with a constant value
     # which is set in the initial block.
@@ -195,11 +201,11 @@ for input_file, output_file in zip(input_path, output_path):
 
     # Convert assigned variables into local variables as able.
     localize = set(assigned_vars) - set(external_vars)
-    # Check for verbatim statements referencing this variable, which I refuse to analyse.
-    localize -= verbatim_vars
     # Search for variables whose persistent state is ignored/overwritten.
     for block_name, variables in rw.reads.items():
         localize -= variables
+    # Check for verbatim statements referencing this variable, which can not be analysed correctly.
+    localize -= verbatim_vars
     # 
     for name in localize:
         print_verbose(f'convert from ASSIGNED to LOCAL: {name}')
