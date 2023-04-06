@@ -17,7 +17,9 @@ import rw_patterns
 TODO docs
 """
 
-# TODO: Add author & copyright strings here.
+__version__ = "1.0.0"
+__author__ = "David McDougall <dam1784[at]rit.edu>"
+__license__ = "MIT"
 
 parser = argparse.ArgumentParser(
         description="TODO",)
@@ -63,6 +65,9 @@ for input_file, output_file in zip(input_path, output_path):
             print(input_file.name+':', *strings, **kwargs)
     print_verbose(f'opened: "{input_file}"')
 
+    # Remove INDEPENDENT statements because they're unnecessary and the nmodl library does not like them.
+    nmodl_text = re.sub(r'\bINDEPENDENT\b\s*{[^{}]*}', '', nmodl_text)
+
     # Parse the nmodl file into an AST.
     ANT = nmodl.ast.AstNodeType
     AST = nmodl.NmodlDriver().parse_string(nmodl_text)
@@ -73,6 +78,7 @@ for input_file, output_file in zip(input_path, output_path):
     # Reload the modified AST so that the nmodl library starts from a clean state.
     nmodl_text = nmodl.to_nmodl(AST)
     AST = nmodl.NmodlDriver().parse_string(nmodl_text)
+    nmodl.symtab.SymtabVisitor().visit_program(AST)
 
     # nmodl.ast.view(AST)             # Useful for debugging.
     # print(AST.get_symbol_table())   # Useful for debugging.
@@ -80,7 +86,6 @@ for input_file, output_file in zip(input_path, output_path):
     # Extract important data from the AST.
     visitor             = nmodl.dsl.visitor.AstLookupVisitor()
     lookup              = lambda n: visitor.lookup(AST, n)
-    nmodl.symtab.SymtabVisitor().visit_program(AST)
     symtab              = AST.get_symbol_table()
     sym_type            = nmodl.symtab.NmodlType
     get_vars_with_prop  = lambda prop: set(STR(x.get_name()) for x in symtab.get_variables_with_properties(prop))
@@ -93,6 +98,7 @@ for input_file, output_file in zip(input_path, output_path):
     parameter_vars      = get_vars_with_prop(sym_type.param_assign)
     assigned_vars       = get_vars_with_prop(sym_type.assigned_definition)
     state_vars          = get_vars_with_prop(sym_type.state_var)
+    pointer_vars        = get_vars_with_prop(sym_type.pointer_var) | get_vars_with_prop(sym_type.bbcore_pointer_var)
     functions           = get_vars_with_prop(sym_type.function_block)
     procedures          = get_vars_with_prop(sym_type.procedure_block)
     solve_blocks        = get_vars_with_prop(sym_type.to_solve)
@@ -106,12 +112,14 @@ for input_file, output_file in zip(input_path, output_path):
             range_vars |
             global_vars |
             state_vars |
+            pointer_vars |
             functions |
             procedures)
     # Find all symbols that are referenced in VERBATIM blocks.
     verbatim_vars = set()
     for stmt in lookup(ANT.VERBATIM):
-        verbatim_vars.update(re.finditer(r'\b\w+\b', nmodl.to_nmodl(stmt)))
+        for symbol in re.finditer(r'\b\w+\b', nmodl.to_nmodl(stmt)):
+            verbatim_vars.add(symbol.group())
     # Let's get this warning out of the way.
     if assigned_vars & verbatim_vars:
         print_verbose("warning: VERBATIM may prevent optimization")
@@ -129,12 +137,12 @@ for input_file, output_file in zip(input_path, output_path):
                     parameters[name] = (value, STR(node.unit.name))
                 else:
                     parameters[name] = (value, "")
-                print_verbose(f'inline: {name} = {value}')
+                print_verbose(f'inline parameter: {name} = {value}')
 
     # Inline celsius if it's given.
     if args.celsius is not None:
         parameters['celsius'] = (args.celsius, 'degC')
-        print_verbose(f'inline: celsius = {args.celsius}')
+        print_verbose(f'inline temperature: celsius = {args.celsius}')
 
     # Inline Q10. Detect and inline assigned variables with a constant value
     # which is set in the initial block.
@@ -146,6 +154,8 @@ for input_file, output_file in zip(input_path, output_path):
             x.visit_initial_block(initial_block.node)
             can_exec = True
         except nmodl_to_python.VerbatimError:
+            can_exec = False
+        except nmodl_to_python.ComplexityError:
             can_exec = False
         # 
         global_scope  = {}
@@ -179,7 +189,7 @@ for input_file, output_file in zip(input_path, output_path):
             # TODO: lookup the units in the symtab
             value = initial_scope[name]
             initial_assigned[name] = (value, "")
-            print_verbose(f'inline: {name} = {value}')
+            print_verbose(f'inline ASSIGNED with constant value: {name} = {value}')
 
     # Convert assigned variables into local variables as able.
     localize = set(assigned_vars) - set(external_vars)

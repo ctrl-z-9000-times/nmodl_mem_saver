@@ -7,6 +7,9 @@ import nmodl.dsl
 
 class VerbatimError(ValueError): pass
 
+class ComplexityError(ValueError): pass
+
+
 class PyGenerator(nmodl.dsl.visitor.AstVisitor):
     def __init__(self):
         super().__init__()
@@ -65,10 +68,13 @@ class PyGenerator(nmodl.dsl.visitor.AstVisitor):
         self.pycode += node.name.get_node_name()
 
     def visit_integer(self, node):
-        self.pycode += nmod.to_nmodl(node)
+        self.pycode += nmodl.to_nmodl(node)
 
     def visit_double(self, node):
         self.pycode += nmodl.to_nmodl(node)
 
     def visit_verbatim(self, node):
         raise VerbatimError()
+
+    def visit_while_statement(self, node):
+        raise ComplexityError()
