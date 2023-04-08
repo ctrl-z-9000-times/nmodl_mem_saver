@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nmodl_preprocessor"
+version = "0.0.0"
+description = "Optimize NMODL files for the NEURON simulator"
+readme = "README.md"
+authors = [
+    {name = "David McDougall", email = "dam1784@rit.edu"},
+]
+license = {text = "MIT"}
+keywords = ["nmodl", "neuron"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Environment :: Console",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+    "Development Status :: 4 - Beta",
+    "Natural Language :: English",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+requires-python = ">=3.7"
+dependencies = ["nmodl"]
+
+[tool.setuptools]
+packages = ["nmodl_preprocessor"]
+
+[project.scripts]
+nmodl_preprocessor = "nmodl_preprocessor:__main__._placeholder"

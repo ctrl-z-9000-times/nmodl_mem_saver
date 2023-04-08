@@ -15,13 +15,13 @@ This program performs the following optimizations to ".mod" files:
 * Python and pip
 
 ```
-git clone
-pip install --user nmodl_preprocessor
+git clone https://github.com/ctrl-z-9000-times/nmodl_preprocessor.git
+pip install nmodl_preprocessor
 ```
 
 ## Usage
 ```
-python nmodl_preprocessor [-h] [--celsius CELSIUS] input_path output_path
+$ nmodl_preprocessor [-h] [--celsius CELSIUS] input_path output_path
 
 positional arguments:
   input_path         input filename or directory of nmodl files

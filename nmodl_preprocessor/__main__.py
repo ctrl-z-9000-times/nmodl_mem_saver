@@ -8,13 +8,12 @@ import math
 import nmodl.ast
 import nmodl.dsl
 import nmodl.symtab
-import numpy as np
 import re
 import textwrap
 
-from utils import *
-import nmodl_to_python
-import rw_patterns
+from nmodl_preprocessor.utils import *
+from nmodl_preprocessor.rw_patterns import RW_Visitor
+from nmodl_preprocessor import nmodl_to_python
 
 parser = argparse.ArgumentParser(prog='python nmodl_preprocessor',
     description="""Optimize NMODL files for the NEURON simulator""",)
@@ -131,7 +130,7 @@ for input_file, output_file in zip(input_path, output_path):
             functions |
             procedures)
     # 
-    rw = rw_patterns.RW_Visitor()
+    rw = RW_Visitor()
     rw.visit_program(AST)
     # Split the document into its top-level blocks for easier manipulation.
     blocks_list = [SimpleNamespace(node=x, text=nmodl.to_nmodl(x)) for x in AST.blocks]
@@ -298,4 +297,7 @@ for src, dst in copy_files:
     import shutil
     print(f'Copy associated file: "{src.name}"')
     shutil.copy(src, dst)
+
+# Symbol for the installation script to import and call.
+_placeholder = lambda: None
 

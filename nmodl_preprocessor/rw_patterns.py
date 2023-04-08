@@ -1,5 +1,5 @@
 import nmodl.dsl
-from utils import *
+from nmodl_preprocessor.utils import *
 
 class RW_Visitor(nmodl.dsl.visitor.AstVisitor):
     """ Determines which symbols each top-level block reads from and writes to. """
