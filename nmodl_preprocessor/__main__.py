@@ -1,10 +1,5 @@
-"""
-TODO docs
-"""
-
-__version__ = "1.0.0"
-__author__ = "David McDougall <dam1784[at]rit.edu>"
-__license__ = "MIT"
+# The MIT License
+# Copyright (c) 2023 David McDougall
 
 from pathlib import Path
 from types import SimpleNamespace
@@ -21,15 +16,14 @@ from utils import *
 import nmodl_to_python
 import rw_patterns
 
-parser = argparse.ArgumentParser(prog='python nmodl_preprocessor', description=__doc__,)
+parser = argparse.ArgumentParser(prog='python nmodl_preprocessor',
+    description="""Optimize NMODL files for the NEURON simulator""",)
 
 parser.add_argument('input_path', type=str,
         help="input filename or directory of nmodl files")
 
 parser.add_argument('output_path', type=str,
         help="output filename or directory for nmodl files")
-
-parser.add_argument('-v', '--verbose', action='count')
 
 parser.add_argument('--celsius', type=float, default=None,
         help="")
@@ -39,6 +33,7 @@ args = parser.parse_args()
 # Find and sanity check all files to be processed.
 input_path  = Path(args.input_path).resolve()
 output_path = Path(args.output_path).resolve()
+copy_files  = [] # List of pairs of (source, destination)
 assert input_path.exists()
 if input_path.is_file():
     assert input_path.suffix == '.mod'
@@ -48,21 +43,31 @@ if input_path.is_file():
     output_path = [output_path]
 elif input_path.is_dir():
     if not output_path.exists():
-        pass # TODO: Make the directory if it doesn't exist.
+        # Make the directory if it doesn't exist.
+        if output_path.parent.is_dir():
+            output_path.mkdir()
     assert output_path.is_dir()
-    input_path  = [x for x in input_path.iterdir() if x.suffix == '.mod']
-    output_path = [output_path.joinpath(x.name) for x in input_path]
+    input_dir   = input_path
+    output_dir  = output_path
+    input_path  = []
+    output_path = []
+    for input_file in input_dir.iterdir():
+        output_file = output_dir.joinpath(input_file.name)
+        if input_file.suffix == '.mod':
+            input_path.append(input_file)
+            output_path.append(output_file)
+        elif input_file.suffix in ('.hoc', '.ses'):
+            copy_files.append((input_file, output_file))
 else: raise RuntimeError('Unreachable')
 
 # Iterate over the files and read each of them.
 for input_file, output_file in zip(input_path, output_path):
     assert input_file != output_file
+    print(f'Read file: "{input_file}"')
     with open(input_file, 'rt') as f:
         nmodl_text = f.read()
     def print_verbose(*strings, **kwargs):
-        if args.verbose:
-            print(input_file.name+':', *strings, **kwargs)
-    print_verbose(f'opened: "{input_file}"')
+        print(input_file.name+':', *strings, **kwargs)
 
     # Remove INDEPENDENT statements because they're unnecessary and the nmodl library does not like them.
     nmodl_text = re.sub(r'\bINDEPENDENT\b\s*{[^{}]*}', '', nmodl_text)
@@ -111,7 +116,7 @@ for input_file, output_file in zip(input_path, output_path):
     # statements can not be analysed correctly. Assume that all symbols in
     # VERBATIM blocks are both read from and written to. Do not attempt to
     # alter the source code in any VERBATIM statements.
-    if (parameter_vars | assigned_vars | {'celsius'}) & verbatim_vars:
+    if lookup(ANT.VERBATIM):
         print_verbose('warning: VERBATIM may prevent optimization')
     # Find all symbols which are provided by or are visible to the larger NEURON simulation.
     external_vars = (
@@ -284,7 +289,13 @@ for input_file, output_file in zip(input_path, output_path):
 
     # Join the top-level blocks back into one big string and save it to the output file.
     nmodl_text = '\n\n'.join(x.text for x in blocks_list) + '\n'
+    print(f'Write file: "{output_file}"')
     with output_file.open('w') as f:
         f.write(nmodl_text)
-        print_verbose(f'saved to: "{output_file}"')
+
+# Copy over any miscellaneous files from the source directory.
+for src, dst in copy_files:
+    import shutil
+    print(f'Copy associated file: "{src.name}"')
+    shutil.copy(src, dst)
 
