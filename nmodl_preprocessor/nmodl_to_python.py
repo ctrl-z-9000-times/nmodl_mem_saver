@@ -63,10 +63,18 @@ class PyGenerator(nmodl.dsl.visitor.AstVisitor):
         raise VerbatimError()
 
     def visit_if_statement(self, node):
-        # Can not guarantee correct results BC the condition might reference unknown values.
-        raise ComplexityError()
-        # TODO: Typically if the condition is NaN then all legs of the if-else
-        # tree will also be NaN, so executing it should be harmless.
+        self.pycode += "if "
+        node.condition.accept(self)
+        self.pycode += ":\n"
+        node.statement_block.accept(self)
+        for elif_node in node.elseifs:
+            self.pycode += "elif "
+            elif_node.condition.accept(self)
+            self.pycode += ":\n"
+            elif_node.statement_block.accept(self)
+        if else_node := node.elses:
+            self.pycode += "else:\n"
+            else_node.statement_block.accept(self)
 
     def visit_while_statement(self, node):
         # Can not guarantee correct results BC the condition might reference unknown values.
