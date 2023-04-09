@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nmodl_preprocessor"
-version = "0.0.0"
+version = "1.0.0"
 description = "Optimize NMODL files for the NEURON simulator"
 readme = "README.md"
 authors = [

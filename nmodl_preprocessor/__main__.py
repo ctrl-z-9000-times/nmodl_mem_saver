@@ -32,35 +32,30 @@ args = parser.parse_args()
 # Find and sanity check all files to be processed.
 input_path  = Path(args.input_path).resolve()
 output_path = Path(args.output_path).resolve()
-copy_files  = [] # List of pairs of (source, destination)
+process_files   = [] # List of pairs of (source, destination)
+copy_files      = [] # List of pairs of (source, destination)
 assert input_path.exists()
 if input_path.is_file():
     assert input_path.suffix == '.mod'
     if output_path.is_dir():
         output_path = output_path.joinpath(input_path.name)
-    input_path  = [input_path]
-    output_path = [output_path]
+    process_files.append((input_path, output_path))
 elif input_path.is_dir():
     if not output_path.exists():
         # Make the directory if it doesn't exist.
         if output_path.parent.is_dir():
             output_path.mkdir()
     assert output_path.is_dir()
-    input_dir   = input_path
-    output_dir  = output_path
-    input_path  = []
-    output_path = []
-    for input_file in input_dir.iterdir():
-        output_file = output_dir.joinpath(input_file.name)
+    for input_file in input_path.iterdir():
+        output_file = output_path.joinpath(input_file.name)
         if input_file.suffix == '.mod':
-            input_path.append(input_file)
-            output_path.append(output_file)
+            process_files.append((input_file, output_file))
         elif input_file.suffix in ('.hoc', '.ses'):
             copy_files.append((input_file, output_file))
 else: raise RuntimeError('Unreachable')
 
-# Iterate over the files and read each of them.
-for input_file, output_file in zip(input_path, output_path):
+# Main Loop.
+for input_file, output_file in process_files:
     assert input_file != output_file
     print(f'Read file: "{input_file}"')
     with open(input_file, 'rt') as f:
@@ -89,9 +84,9 @@ for input_file, output_file in zip(input_path, output_path):
     # Extract important data from the AST.
     visitor             = nmodl.dsl.visitor.AstLookupVisitor()
     lookup              = lambda n: visitor.lookup(AST, n)
-    symtab              = AST.get_symbol_table()
+    sym_table           = AST.get_symbol_table()
     sym_type            = nmodl.symtab.NmodlType
-    get_vars_with_prop  = lambda prop: set(STR(x.get_name()) for x in symtab.get_variables_with_properties(prop))
+    get_vars_with_prop  = lambda prop: set(STR(x.get_name()) for x in sym_table.get_variables_with_properties(prop))
     neuron_vars         = get_vars_with_prop(sym_type.extern_neuron_variable)
     read_ion_vars       = get_vars_with_prop(sym_type.read_ion_var)
     write_ion_vars      = get_vars_with_prop(sym_type.write_ion_var)
@@ -139,7 +134,7 @@ for input_file, output_file in zip(input_path, output_path):
     # Inline the parameters.
     parameters = {}
     for name in (parameter_vars - external_vars - verbatim_vars):
-        for node in symtab.lookup(name).get_nodes():
+        for node in sym_table.lookup(name).get_nodes():
             if node.is_param_assign() and node.value is not None:
                 value = float(STR(node.value))
                 if node.unit is not None:
@@ -234,12 +229,6 @@ for input_file, output_file in zip(input_path, output_path):
                 new_lines.append(stmt_nmodl)
         block.text = 'ASSIGNED {\n' + '\n'.join('    ' + x for x in new_lines) + '\n}'
 
-    # Check the temperature in the INITIAL block.
-    if args.celsius is not None:
-        if block := blocks.get('INITIAL', None):
-            f"VERBATIM\n    assert(celsius == {args.celsius});\n    ENDVERBATIM\n"
-            # block.text = 1/0 # TODO!
-
     # Substitute the parameters with their values.
     for block in blocks_list:
         # Search for the blocks which contain code.
@@ -264,11 +253,18 @@ for input_file, output_file in zip(input_path, output_path):
                     table_regex,
                     lambda m: re.sub(rf',\s*{name}\b', '', m.group()),
                     block.text)
-            # Substitued references to the symbol from general code.
+            # Substitute the symbol from general code.
             value = str(value)
             if units:
                 value += f'({units})'
             block.text = re.sub(rf'\b{name}\b', value, block.text)
+
+    # Check the temperature in the INITIAL block.
+    if args.celsius is not None:
+        if block := blocks.get('INITIAL', None):
+            signature, start, body = block.text.partition('{')
+            check_temp = f"\n    VERBATIM\n    assert(celsius == {args.celsius});\n    ENDVERBATIM\n"
+            block.text = signature + start + check_temp + body
 
     # Insert new LOCAL statements to replace the assigned variables.
     new_locals = {} # Maps from block name to set of names of new local variables.
