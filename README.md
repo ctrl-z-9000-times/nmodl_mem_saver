@@ -7,6 +7,8 @@ This program performs the following optimizations to ".mod" files:
 * Inline assigned variables with constant values
 * Convert assigned variables into local variables
 
+These optimizations can improve runtime performance by as much as 15%.
+
 ## Installation
 
 #### Prerequisites
@@ -35,14 +37,8 @@ options:
 
 ## Tips
 
-* Remove unnecessary RANGE and GLOBAL variables.  
+* Remove variables from RANGE and GLOBAL statements unless you actually need to
+inspect or modify their value.  
 
-* Avoid VERBATIM statements.
-
-
-## Testimonials
-
-On a recent project this reduced the runtime by X% and the memory usage by Y%.
-However this was only after removing all of the unnecessary RANGE variables.
-The original files yielded an X% and Y% reduction, respectively.
+* Remove unnecessary VERBATIM statements.  
 

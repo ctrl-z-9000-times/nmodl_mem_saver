@@ -182,8 +182,7 @@ for input_file, output_file in process_files:
                 exec(x.pycode, global_scope, initial_scope)
             except:
                 pycode = '\n'.join(str(i+1).rjust(2) + ": " + line for i, line in enumerate(x.pycode.split('\n'))) # Prepend line numbers.
-                print("While exec'ing:")
-                print(pycode)
+                print("While exec'ing:\n"+pycode)
                 raise
         # Filter out any assignments that were made with unknown input values.
         initial_scope = dict(x for x in initial_scope.items() if not math.isnan(x[1]))
