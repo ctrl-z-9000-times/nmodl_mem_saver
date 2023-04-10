@@ -146,13 +146,12 @@ for input_file, output_file in process_files:
                 parameters[name] = (value, units)
                 print_verbose(f'inline parameter: {name} = {value} {units}')
 
-    # Inline celsius if it's given, overriding any default parameter value.
+    # Inline celsius if it's given, and override any default parameter value.
+    if 'celsius' in verbatim_vars:  args.celsius = None # Can not inline into VERBATIM blocks.
+    if 'celsius' not in parameters: args.celsius = None # Parameter is not used.
     if args.celsius is not None:
-        if 'celsius' in verbatim_vars:
-            args.celsius = None # Can not inline into VERBATIM blocks.
-        else:
-            parameters['celsius'] = (args.celsius, '(degC)')
-            print_verbose(f'inline temperature: celsius = {args.celsius} (degC)')
+        parameters['celsius'] = (args.celsius, '(degC)')
+        print_verbose(f'inline temperature: celsius = {args.celsius} (degC)')
 
     # Inline Q10. Detect and inline assigned variables with a constant value
     # which is set in the initial block.
@@ -281,6 +280,12 @@ for input_file, output_file in process_files:
         names = ', '.join(sorted(local_names))
         body  = textwrap.indent(body, '    ')
         block.text = signature + '{\n    LOCAL ' + names + '\n    {' + body + '\n}'
+
+    # Find any local statements in the top level scope and move them to the top
+    # of the file. Local variables must be declared before they're used, and
+    # inlining functions can cause them to be used before they were originally declared.
+    blocks_list.sort(key=lambda x: not (
+            x.node.is_model() or x.node.is_block_comment() or x.node.is_local_list_statement()))
 
     # Join the top-level blocks back into one big string and save it to the output file.
     nmodl_text = '\n\n'.join(x.text for x in blocks_list) + '\n'
