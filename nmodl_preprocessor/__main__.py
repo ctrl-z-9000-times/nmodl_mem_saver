@@ -125,6 +125,11 @@ for input_file, output_file in process_files:
             functions |
             procedures)
     # 
+    assigned_units = {name: '' for name in assigned_vars}
+    for stmt in lookup(ANT.ASSIGNED_DEFINITION):
+        if stmt.unit:
+            assigned_units[STR(stmt.name)] = STR(stmt.unit)
+    # 
     rw = RW_Visitor()
     rw.visit_program(AST)
     # Split the document into its top-level blocks for easier manipulation.
@@ -137,23 +142,21 @@ for input_file, output_file in process_files:
         for node in sym_table.lookup(name).get_nodes():
             if node.is_param_assign() and node.value is not None:
                 value = float(STR(node.value))
-                if node.unit is not None:
-                    parameters[name] = (value, STR(node.unit.name))
-                else:
-                    parameters[name] = (value, "")
-                print_verbose(f'inline parameter: {name} = {value}')
+                units = ('('+STR(node.unit.name)+')') if node.unit else ''
+                parameters[name] = (value, units)
+                print_verbose(f'inline parameter: {name} = {value} {units}')
 
     # Inline celsius if it's given, overriding any default parameter value.
     if args.celsius is not None:
         if 'celsius' in verbatim_vars:
             args.celsius = None # Can not inline into VERBATIM blocks.
         else:
-            parameters['celsius'] = (args.celsius, 'degC')
-            print_verbose(f'inline temperature: celsius = {args.celsius}')
+            parameters['celsius'] = (args.celsius, '(degC)')
+            print_verbose(f'inline temperature: celsius = {args.celsius} (degC)')
 
     # Inline Q10. Detect and inline assigned variables with a constant value
     # which is set in the initial block.
-    initial_assigned = {}
+    assigned_const_value = {}
     if initial_block := blocks.get('INITIAL', None):
         # Convert the INITIAL block into python.
         x = nmodl_to_python.PyGenerator()
@@ -172,8 +175,8 @@ for input_file, output_file in process_files:
         for name in external_vars:
             global_scope[name] = math.nan
         # 
-        for name, value in parameters.items():
-            global_scope[name] = value[0]
+        for name, (value, units) in parameters.items():
+            global_scope[name] = value
         # 
         if can_exec:
             try:
@@ -192,20 +195,20 @@ for input_file, output_file in process_files:
                 runtime_writes_to.update(variables)
         # 
         for name in ((assigned_vars & set(initial_scope)) - runtime_writes_to - verbatim_vars):
-            # TODO: lookup the units in the symtab
             value = initial_scope[name]
-            initial_assigned[name] = (value, "")
-            print_verbose(f'inline ASSIGNED with constant value: {name} = {value}')
+            units = assigned_units[name]
+            assigned_const_value[name] = (value, "")
+            print_verbose(f'inline ASSIGNED with constant value: {name} = {value} {units}')
 
     # Convert assigned variables into local variables as able.
-    localize = set(assigned_vars) - set(external_vars)
+    assigned_to_local = set(assigned_vars) - set(external_vars)
     # Search for variables whose persistent state is ignored/overwritten.
-    for block_name, variables in rw.reads.items():
-        localize -= variables
+    for block_name, read_variables in rw.reads.items():
+        assigned_to_local -= read_variables
     # Check for verbatim statements referencing this variable, which can not be analysed correctly.
-    localize -= verbatim_vars
+    assigned_to_local -= verbatim_vars
     # 
-    for name in localize:
+    for name in assigned_to_local:
         print_verbose(f'convert from ASSIGNED to LOCAL: {name}')
 
     ############################################################################
@@ -219,9 +222,9 @@ for input_file, output_file in process_files:
                 new_lines.append(stmt_nmodl)
         block.text = 'PARAMETER {\n' + '\n'.join('    ' + x for x in new_lines) + '\n}'
 
-    # Regenerate the ASSIGNED block without the localized variables.
+    # Regenerate the ASSIGNED block without the removed symbols.
     if block := blocks.get('ASSIGNED', None):
-        remove_assigned = localize | set(initial_assigned)
+        remove_assigned = set(assigned_to_local) | set(assigned_const_value)
         new_lines = []
         for stmt in block.node.definitions:
             if not (stmt.is_assigned_definition() and STR(stmt.name) in remove_assigned):
@@ -242,10 +245,10 @@ for input_file, output_file in process_files:
         if block.node.is_assigned_block(): continue
         # 
         substitutions = dict(parameters)
-        substitutions.update(initial_assigned)
+        substitutions.update(assigned_const_value)
         for name, (value, units) in substitutions.items():
             # The assignment to this variable is still present, it's just converted to a local variable.
-            if block.node.is_initial_block() and name in initial_assigned:
+            if block.node.is_initial_block() and name in assigned_const_value:
                 continue
             # Delete references to the symbol from TABLE statements.
             table_regex = rf'\bTABLE\s+(\w+\s*,\s*)*\w+\s+DEPEND\s+(\w+\s*,\s*)*{name}\b'
@@ -254,9 +257,7 @@ for input_file, output_file in process_files:
                     lambda m: re.sub(rf',\s*{name}\b', '', m.group()),
                     block.text)
             # Substitute the symbol from general code.
-            value = str(value)
-            if units:
-                value += f'({units})'
+            value = str(value) + units
             block.text = re.sub(rf'\b{name}\b', value, block.text)
 
     # Check the temperature in the INITIAL block.
@@ -266,19 +267,18 @@ for input_file, output_file in process_files:
             check_temp = f"\n    VERBATIM\n    assert(celsius == {args.celsius});\n    ENDVERBATIM\n"
             block.text = signature + start + check_temp + body
 
-    # Insert new LOCAL statements to replace the assigned variables.
+    # Insert new LOCAL statements to replace the removed assigned variables.
     new_locals = {} # Maps from block name to set of names of new local variables.
-    if initial_assigned:
-        new_locals['INITIAL'] = set(initial_assigned.keys())
-    for block_name, variables in rw.writes.items():
-        localize_variables = localize & variables
-        if localize_variables:
-            new_locals.setdefault(block_name, set()).update(localize_variables)
+    if assigned_const_value:
+        new_locals['INITIAL'] = set(assigned_const_value.keys())
+    for block_name, write_variables in rw.writes.items():
+        if converted_variables := assigned_to_local & write_variables:
+            new_locals.setdefault(block_name, set()).update(converted_variables)
     # 
     for block_name, local_names in new_locals.items():
         block = blocks[block_name]
         signature, start, body = block.text.partition('{')
-        names       = ', '.join(sorted(local_names))
+        names = ', '.join(sorted(local_names))
         body  = textwrap.indent(body, '    ')
         block.text = signature + '{\n    LOCAL ' + names + '\n    {' + body + '\n}'
 
