@@ -1,5 +1,5 @@
-# The MIT License
 # Copyright (c) 2023 David McDougall
+# Released under the MIT License
 
 from pathlib import Path
 from types import SimpleNamespace
