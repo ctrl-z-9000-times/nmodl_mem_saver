@@ -144,14 +144,14 @@ for input_file, output_file in process_files:
                 value = float(STR(node.value))
                 units = ('('+STR(node.unit.name)+')') if node.unit else ''
                 parameters[name] = (value, units)
-                print_verbose(f'inline parameter: {name} = {value} {units}')
+                print_verbose(f'inline PARAMETER: {name} = {value} {units}')
 
     # Inline celsius if it's given, and override any default parameter value.
     if 'celsius' in verbatim_vars:  args.celsius = None # Can not inline into VERBATIM blocks.
-    if 'celsius' not in parameters: args.celsius = None # Parameter is not used.
+    if 'celsius' not in parameter_vars: args.celsius = None # Parameter is not used.
     if args.celsius is not None:
         parameters['celsius'] = (args.celsius, '(degC)')
-        print_verbose(f'inline temperature: celsius = {args.celsius} (degC)')
+        print_verbose(f'inline PARAMETER: celsius = {args.celsius} (degC)')
 
     # Inline Q10. Detect and inline assigned variables with a constant value
     # which is set in the initial block.
@@ -199,7 +199,7 @@ for input_file, output_file in process_files:
             print_verbose(f'inline ASSIGNED with constant value: {name} = {value} {units}')
 
     # Convert assigned variables into local variables as able.
-    assigned_to_local = set(assigned_vars) - set(external_vars)
+    assigned_to_local = set(assigned_vars) - set(external_vars) - set(assigned_const_value)
     # Search for variables whose persistent state is ignored/overwritten.
     for block_name, read_variables in rw.reads.items():
         assigned_to_local -= read_variables
@@ -215,9 +215,14 @@ for input_file, output_file in process_files:
     if block := blocks.get('PARAMETER', None):
         new_lines = []
         for stmt in block.node.statements:
-            if not (stmt.is_param_assign() and STR(stmt.name) in parameters):
-                stmt_nmodl = nmodl.to_nmodl(stmt)
-                new_lines.append(stmt_nmodl)
+            if stmt.is_param_assign():
+                name = STR(stmt.name)
+                if name == 'celsius':
+                    pass
+                elif name in parameters:
+                    continue
+            stmt_nmodl = nmodl.to_nmodl(stmt)
+            new_lines.append(stmt_nmodl)
         block.text = 'PARAMETER {\n' + '\n'.join('    ' + x for x in new_lines) + '\n}'
 
     # Regenerate the ASSIGNED block without the removed symbols.
@@ -245,7 +250,9 @@ for input_file, output_file in process_files:
         substitutions = dict(parameters)
         substitutions.update(assigned_const_value)
         for name, (value, units) in substitutions.items():
-            # The assignment to this variable is still present, it's just converted to a local variable.
+            # The assignment to this variable is still present, it's just
+            # converted to a local variable. The compiler should be able to
+            # eliminate this unused code.
             if block.node.is_initial_block() and name in assigned_const_value:
                 continue
             # Delete references to the symbol from TABLE statements.
@@ -262,7 +269,7 @@ for input_file, output_file in process_files:
     if args.celsius is not None:
         if block := blocks.get('INITIAL', None):
             signature, start, body = block.text.partition('{')
-            check_temp = f"\n    VERBATIM\n    assert(celsius == {args.celsius});\n    ENDVERBATIM\n"
+            check_temp = f"\n    assert(celsius == {args.celsius})\n"
             block.text = signature + start + check_temp + body
 
     # Insert new LOCAL statements to replace the removed assigned variables.
