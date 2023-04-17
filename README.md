@@ -12,12 +12,10 @@ These optimizations can improve runtime performance by as much as 15%.
 ## Installation
 
 #### Prerequisites
+* [Python](https://www.python.org/) and [pip](https://pip.pypa.io/en/stable/)
 * [The NMODL Framework](https://bluebrain.github.io/nmodl/html/index.html)
-* [The NEURON simulator](https://www.neuron.yale.edu/neuron/)
-* Python and pip
 
 ```
-git clone https://github.com/ctrl-z-9000-times/nmodl_preprocessor.git
 pip install nmodl_preprocessor
 ```
 
@@ -31,7 +29,7 @@ positional arguments:
 
 options:
   -h, --help         show this help message and exit
-  --celsius CELSIUS
+  --celsius CELSIUS  temperature of the simulation
 
 ```
 

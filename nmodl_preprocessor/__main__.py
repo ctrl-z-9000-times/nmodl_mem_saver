@@ -15,8 +15,12 @@ from nmodl_preprocessor.utils import *
 from nmodl_preprocessor.rw_patterns import RW_Visitor
 from nmodl_preprocessor import nmodl_to_python
 
-parser = argparse.ArgumentParser(prog='python nmodl_preprocessor',
-    description="""Optimize NMODL files for the NEURON simulator""",)
+issue_tracker = "https://github.com/ctrl-z-9000-times/nmodl_preprocessor/issues"
+
+parser = argparse.ArgumentParser(prog='nmodl_preprocessor',
+    description="""Optimize NMODL files for the NEURON simulator""",
+    epilog=f"""Please report any problems to:\n{issue_tracker}""",
+    formatter_class=argparse.RawDescriptionHelpFormatter)
 
 parser.add_argument('input_path', type=str,
         help="input filename or directory of nmodl files")
@@ -25,7 +29,7 @@ parser.add_argument('output_path', type=str,
         help="output filename or directory for nmodl files")
 
 parser.add_argument('--celsius', type=float, default=None,
-        help="")
+        help="temperature of the simulation")
 
 args = parser.parse_args()
 
