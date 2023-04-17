@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nmodl_preprocessor"
-version = "1.0.0"
+version = "1.0.1"
 description = "Optimize NMODL files for the NEURON simulator"
 readme = "README.md"
 authors = [
@@ -17,13 +17,16 @@ classifiers = [
     "Environment :: Console",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering",
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Natural Language :: English",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
 requires-python = ">=3.7"
 dependencies = ["nmodl"]
+
+[project.urls]
+homepage = "https://github.com/ctrl-z-9000-times/nmodl_preprocessor"
 
 [tool.setuptools]
 packages = ["nmodl_preprocessor"]
