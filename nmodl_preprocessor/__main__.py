@@ -172,7 +172,7 @@ for input_file, output_file in process_files:
             can_exec = False
             print_verbose('warning: complex INITIAL block may prevent optimization')
         # 
-        global_scope  = {}
+        global_scope  = {"math": math} # Include the standard math library.
         initial_scope = {}
         # Represent unknown external input values as NaN's.
         for name in external_vars:
@@ -185,8 +185,8 @@ for input_file, output_file in process_files:
             try:
                 exec(x.pycode, global_scope, initial_scope)
             except:
-                pycode = '\n'.join(str(i+1).rjust(2) + ": " + line for i, line in enumerate(x.pycode.split('\n'))) # Prepend line numbers.
-                print("While exec'ing:\n"+pycode)
+                pycode = prepend_line_numbers(x.pycode.rstrip())
+                print_verbose("error: while executing INITIAL block:\n" + pycode)
                 raise
         # Filter out any assignments that were made with unknown input values.
         initial_scope = dict(x for x in initial_scope.items() if not math.isnan(x[1]))
