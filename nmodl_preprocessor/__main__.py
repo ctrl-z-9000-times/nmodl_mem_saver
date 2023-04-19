@@ -111,9 +111,9 @@ for input_file, output_file in process_files:
         for symbol in re.finditer(r'\b\w+\b', nmodl.to_nmodl(stmt)):
             verbatim_vars.add(symbol.group())
     # Let's get this warning out of the way. As chunks of C/C++ code, VERBATIM
-    # statements can not be analysed correctly. Assume that all symbols in
-    # VERBATIM blocks are both read from and written to. Do not attempt to
-    # alter the source code in any VERBATIM statements.
+    # statements can not be analysed. Assume that all symbols in VERBATIM
+    # blocks are both read from and written to. Do not attempt to alter the
+    # source code inside of VERBATIM blocks.
     if lookup(ANT.VERBATIM):
         print_verbose('warning: VERBATIM may prevent optimization')
     # Find all symbols which are provided by or are visible to the larger NEURON simulation.
@@ -142,7 +142,7 @@ for input_file, output_file in process_files:
 
     # Inline the parameters.
     parameters = {}
-    for name in (parameter_vars - external_vars - verbatim_vars):
+    for name in (parameter_vars - external_vars - verbatim_vars - rw.all_writes):
         for node in sym_table.lookup(name).get_nodes():
             if node.is_param_assign() and node.value is not None:
                 value = float(STR(node.value))

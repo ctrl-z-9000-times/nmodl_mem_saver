@@ -9,6 +9,13 @@ class RW_Visitor(nmodl.dsl.visitor.AstVisitor):
         # Maps from block name to set of symbol names.
         self.reads = {}
         self.writes = {}
+        # Set of all variables which are assigned to.
+        self.all_writes = set()
+
+    def visit_program(self, node):
+        node.visit_children(self)
+        for block_name, var_names in self.writes.items():
+            self.all_writes.update(var_names)
 
     def visit_statement_block(self, node):
         # Look for top level code blocks.
