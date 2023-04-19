@@ -273,7 +273,7 @@ for input_file, output_file in process_files:
     if args.celsius is not None:
         if block := blocks.get('INITIAL', None):
             signature, start, body = block.text.partition('{')
-            check_temp = f"\n    assert(celsius == {args.celsius})\n"
+            check_temp = f"\n    VERBATIM\n    assert(celsius == {args.celsius});\n    ENDVERBATIM\n"
             block.text = signature + start + check_temp + body
 
     # Insert new LOCAL statements to replace the removed assigned variables.
