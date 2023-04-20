@@ -15,11 +15,11 @@ from nmodl_preprocessor.utils import *
 from nmodl_preprocessor.rw_patterns import RW_Visitor
 from nmodl_preprocessor import nmodl_to_python
 
-issue_tracker = "https://github.com/ctrl-z-9000-times/nmodl_preprocessor/issues"
+website = "https://github.com/ctrl-z-9000-times/nmodl_preprocessor"
 
 parser = argparse.ArgumentParser(prog='nmodl_preprocessor',
-    description="""Optimize NMODL files for the NEURON simulator""",
-    epilog=f"""Please report any problems to:\n{issue_tracker}""",
+    description="This program optimizes NMODL files for the NEURON simulator.",
+    epilog=f"For more information or to report a problem go to:\n{website}",
     formatter_class=argparse.RawDescriptionHelpFormatter)
 
 parser.add_argument('input_path', type=str,
@@ -49,7 +49,7 @@ elif input_path.is_dir():
         # Make the directory if it doesn't exist.
         if output_path.parent.is_dir():
             output_path.mkdir()
-    assert output_path.is_dir()
+    assert output_path.exists()
     for input_file in input_path.iterdir():
         output_file = output_path.joinpath(input_file.name)
         if input_file.suffix == '.mod':

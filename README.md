@@ -1,13 +1,15 @@
 # nmodl_preprocessor
 
-This program performs the following optimizations to ".mod" files:
-* Inline parameters
-* Inline temperature
-* Inline functions and procedures
-* Inline assigned variables with constant values
+This program optimizes NMODL files for the NEURON simulator.  
+It performs the following optimizations to ".mod" files:  
+* Hardcode the parameters
+* Hardcode the temperature
+* Hardcode any assigned variables with constant values
+* Inline all functions and procedures
 * Convert assigned variables into local variables
 
-These optimizations can improve runtime performance by as much as 15%.
+These optimizations can improve run-time performance and memory usage by as much
+as 15%.
 
 ## Installation
 
@@ -35,8 +37,10 @@ options:
 
 ## Tips
 
-* Remove variables from RANGE and GLOBAL statements unless you actually need to
-inspect or modify their value.  
+* This program will not optimize any RANGE or GLOBAL symbols.  
+  - Remove them unless you actually need to inspect or modify
+    their value at run-time.  
+  - Add parameters to a GLOBAL statement to preserve them.  
 
 * Remove unnecessary VERBATIM statements.  
 
