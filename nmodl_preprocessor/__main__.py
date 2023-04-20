@@ -39,20 +39,29 @@ output_path = Path(args.output_path).resolve()
 process_files   = [] # List of pairs of (source, destination)
 copy_files      = [] # List of pairs of (source, destination)
 assert input_path.exists()
-if input_path.is_file():
-    assert input_path.suffix == '.mod'
-    if output_path.is_dir():
-        output_path = output_path.joinpath(input_path.name)
-    process_files.append((input_path, output_path))
-elif input_path.is_dir():
-    if not output_path.exists():
-        # Make the directory if it doesn't exist.
-        if output_path.parent.is_dir():
+if input_path.is_file(): # Process a single file.
+    assert input_path.suffix == ".mod", "input file is not an NMODL file (expected \".mod\" file)"
+    if output_path.exists():
+        if output_path.is_file(): # Overwrite the output file.
+            assert output_path.suffix == ".mod", "output file is not an NMODL file (expected \".mod\" file)"
+        elif output_path.is_dir(): # Put the output in this directory.
+            output_path = output_path.joinpath(input_path.name)
+    else:
+        if output_path.suffix: # Write the output to a new file.
+            assert output_path.suffix == ".mod", "output file is not an NMODL file (expected \".mod\" file)"
+        else: # Put the output in a new directory.
+            assert output_path.parent.is_dir(), "output directory does not exist" # Refuse to make multiple nested directories.
             output_path.mkdir()
-    assert output_path.exists()
+            output_path = output_path.joinpath(input_path.name)
+    process_files.append((input_path, output_path))
+elif input_path.is_dir(): # Process multiple files.
+    if not output_path.exists(): # Make a new directory for the output.
+        assert output_path.parent.is_dir(), "output directory does not exist" # Refuse to make multiple nested directories.
+        output_path.mkdir()
+    assert output_path.is_dir(), "if the input is a directory then the output must also be a directory"
     for input_file in input_path.iterdir():
         output_file = output_path.joinpath(input_file.name)
-        if input_file.suffix == '.mod':
+        if input_file.suffix == ".mod":
             process_files.append((input_file, output_file))
         elif input_file.suffix in ('.hoc', '.ses'):
             copy_files.append((input_file, output_file))
@@ -60,7 +69,7 @@ else: raise RuntimeError('Unreachable')
 
 # Main Loop.
 for input_file, output_file in process_files:
-    assert input_file != output_file
+    assert input_file != output_file, "operation would overwrite input file"
     print(f'Read file: "{input_file}"')
     with open(input_file, 'rt') as f:
         nmodl_text = f.read()
@@ -151,7 +160,7 @@ for input_file, output_file in process_files:
                 print_verbose(f'inline PARAMETER: {name} = {value} {units}')
 
     # Inline celsius if it's given, and override any default parameter value.
-    if 'celsius' in verbatim_vars:  args.celsius = None # Can not inline into VERBATIM blocks.
+    if 'celsius' in verbatim_vars: args.celsius = None # Can not inline into VERBATIM blocks.
     if 'celsius' not in parameter_vars: args.celsius = None # Parameter is not used.
     if args.celsius is not None:
         parameters['celsius'] = (args.celsius, '(degC)')
