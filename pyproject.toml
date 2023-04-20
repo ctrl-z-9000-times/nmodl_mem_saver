@@ -2,15 +2,19 @@
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools]
+packages = ["nmodl_preprocessor"]
+
 [project]
 name = "nmodl_preprocessor"
-version = "1.0.2"
+version = "1.0.3"
 description = "Optimize NMODL files for the NEURON simulator"
 readme = "README.md"
+license = {text = "MIT"}
 authors = [
     {name = "David McDougall", email = "dam1784@rit.edu"},
 ]
-license = {text = "MIT"}
+urls = {Homepage = "https://github.com/ctrl-z-9000-times/nmodl_preprocessor"}
 keywords = ["nmodl", "neuron"]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -24,12 +28,4 @@ classifiers = [
 ]
 requires-python = ">=3.7"
 dependencies = ["nmodl"]
-
-[project.urls]
-homepage = "https://github.com/ctrl-z-9000-times/nmodl_preprocessor"
-
-[tool.setuptools]
-packages = ["nmodl_preprocessor"]
-
-[project.scripts]
-nmodl_preprocessor = "nmodl_preprocessor:__main__._placeholder"
+scripts = {nmodl_preprocessor = "nmodl_preprocessor:__main__._placeholder"}
