@@ -304,11 +304,13 @@ for input_file, output_file in process_files:
             table_regex = rf'\bTABLE\s+(\w+\s*,\s*)*\w+\s+DEPEND\s+(\w+\s*,\s*)*{name}\b'
             block.text = re.sub(
                     table_regex,
-                    lambda m: re.sub(rf',\s*{name}\b', '', m.group()),
+                    lambda m: re.sub(rf',?\s*{name}\b', '', m.group()),
                     block.text)
             # Substitute the symbol from general code.
             value = str(value) + units
             block.text = re.sub(rf'\b{name}\b', value, block.text)
+        # Delete empty TABLE DEPEND statements.
+        block.text = re.sub(r'\bDEPEND\s+FROM\b', 'FROM', block.text)
 
     # Check the temperature in the INITIAL block.
     if 'celsius' in parameters:
