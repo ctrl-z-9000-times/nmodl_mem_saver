@@ -350,7 +350,8 @@ for input_file, output_file in process_files:
     # of the file. Local variables must be declared before they're used, and
     # inlining functions can cause them to be used before they were originally declared.
     blocks_list.sort(key=lambda x: not (
-            x.node.is_model() or x.node.is_block_comment() or x.node.is_local_list_statement()))
+            x.node.is_model() or x.node.is_block_comment() or
+            x.node.is_local_list_statement() or x.node.is_define()))
 
     # Join the top-level blocks back into one big string and save it to the output file.
     nmodl_text = '\n\n'.join(x.text for x in blocks_list) + '\n'
