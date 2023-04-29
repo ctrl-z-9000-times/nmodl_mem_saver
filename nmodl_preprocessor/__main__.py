@@ -3,6 +3,7 @@
 
 from pathlib import Path
 from types import SimpleNamespace
+from sys import stderr
 import argparse
 import math
 import nmodl.ast
@@ -71,24 +72,37 @@ else: raise RuntimeError('Unreachable')
 # Main Loop.
 for input_file, output_file in process_files:
     assert input_file != output_file, "operation would overwrite input file"
-    print(f'Read file: "{input_file}"')
+    def print_verbose(*strings, **kwargs):
+        print(input_file.name+':', *strings, **kwargs, file=stderr)
+    def print_exception(exception):
+        print_verbose(f"{type(exception).__name__}: {str(exception)}")
+    print_verbose(f'read file: "{input_file}"')
     with open(input_file, 'rt') as f:
         nmodl_text = f.read()
-    def print_verbose(*strings, **kwargs):
-        print(input_file.name+':', *strings, **kwargs)
 
     # Remove INDEPENDENT statements because they're unnecessary and the nmodl library does not like them.
     nmodl_text = re.sub(r'\bINDEPENDENT\b\s*{[^{}]*}', '', nmodl_text)
 
     # Parse the nmodl file into an AST.
     ANT = nmodl.ast.AstNodeType
-    AST = nmodl.NmodlDriver().parse_string(nmodl_text)
+    try:
+        AST = nmodl.NmodlDriver().parse_string(nmodl_text)
+        nmodl.symtab.SymtabVisitor().visit_program(AST)
+    except RuntimeError as error:
+        print_exception(error)
+        print_verbose("warning: could not parse and build symbol table")
+        copy_files.append((input_file, output_file))
+        continue
 
-    # Always inline all of the functions and procedures.
-    nmodl.symtab.SymtabVisitor().visit_program(AST)
-    nmodl.dsl.visitor.InlineVisitor().visit_program(AST)
-    # Reload the modified AST so that the nmodl library starts from a clean state.
-    nmodl_text = nmodl.to_nmodl(AST)
+    # Inline all of the functions and procedures, and then reload the modified
+    # AST so that the nmodl library starts from a clean state.
+    try:
+        nmodl.dsl.visitor.InlineVisitor().visit_program(AST)
+    except RuntimeError:
+        print_exception(error)
+        print_verbose("warning: could not inline all functions and procedures")
+    else:
+        nmodl_text = nmodl.to_nmodl(AST)
     AST = nmodl.NmodlDriver().parse_string(nmodl_text)
     nmodl.symtab.SymtabVisitor().visit_program(AST)
 
@@ -200,7 +214,8 @@ for input_file, output_file in process_files:
                 exec(x.pycode, global_scope, initial_scope)
             except Exception as error:
                 pycode = prepend_line_numbers(x.pycode.rstrip())
-                print_verbose("error: while executing INITIAL block:\n" + pycode)
+                print_exception(error)
+                print_verbose("warning: could not execute INITIAL block:\n" + pycode)
                 initial_scope = {}
         # Find all of the variables which are written to durring the runtime.
         # These variables obviously do not have a constant value.
@@ -317,7 +332,7 @@ for input_file, output_file in process_files:
 
     # Join the top-level blocks back into one big string and save it to the output file.
     nmodl_text = '\n\n'.join(x.text for x in blocks_list) + '\n'
-    print(f'Write file: "{output_file}"')
+    print_verbose(f'write file: "{output_file}"')
     with output_file.open('w') as f:
         f.write(nmodl_text)
 
