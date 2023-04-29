@@ -68,7 +68,7 @@ elif input_path.is_dir(): # Process multiple files.
         output_file = output_path.joinpath(input_file.name)
         if input_file.suffix == ".mod":
             process_files.append((input_file, output_file))
-        elif input_file.suffix in ('.hoc', '.ses'):
+        elif input_file.suffix in ('.hoc', '.ses', '.inc'):
             copy_files.append((input_file, output_file))
 else:
     raise RuntimeError('Unreachable')
@@ -104,9 +104,21 @@ for input_file, output_file in process_files:
     # nmodl.ast.view(AST)             # Useful for debugging.
     # print(AST.get_symbol_table())   # Useful for debugging.
 
-    # Find all symbols that are referenced in VERBATIM blocks.
+    # Check for INCLUDE statements. It is unreasonable to find the included file.
+    # The file is located in one of the following places (searched in this order):
+    #     1) The current working directory,
+    #     2) The directory of this nmodl file,
+    #     3) The directories specified by the "MODL_INCLUDES" environment variable.
+    # INCLUDE statements prevent all optimizations because they all rely on
+    # having the complete NMODL source code.
     visitor = nmodl.dsl.visitor.AstLookupVisitor()
     lookup  = lambda ast_node_type: visitor.lookup(AST, ast_node_type)
+    if lookup(ANT.INCLUDE):
+        print_verbose('warning: INCLUDE prevent optimization')
+        copy_files.append((input_file, output_file))
+        continue
+
+    # Find all symbols that are referenced in VERBATIM blocks.
     verbatim_vars = set()
     for stmt in lookup(ANT.VERBATIM):
         for symbol in re.finditer(r'\b\w+\b', nmodl.to_nmodl(stmt)):
