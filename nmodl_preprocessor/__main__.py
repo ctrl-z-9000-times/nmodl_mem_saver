@@ -159,12 +159,14 @@ for input_file, output_file in process_files:
                 parameters[name] = (value, units)
                 print_verbose(f'inline PARAMETER: {name} = {value} {units}')
 
-    # Inline celsius if it's given, and override any default parameter value.
-    if 'celsius' in verbatim_vars: args.celsius = None # Can not inline into VERBATIM blocks.
-    if 'celsius' not in parameter_vars: args.celsius = None # Parameter is not used.
-    if args.celsius is not None:
-        parameters['celsius'] = (args.celsius, '(degC)')
-        print_verbose(f'inline PARAMETER: celsius = {args.celsius} (degC)')
+    # Inline celsius if it's given and if this nmodl file uses it.
+    if args.celsius is not None and 'celsius' in parameter_vars:
+        if 'celsius' in verbatim_vars:
+            pass # Can not inline into VERBATIM blocks.
+        else:
+            # Overwrite any existing default value with the given value.
+            parameters['celsius'] = (args.celsius, '(degC)')
+            print_verbose(f'inline PARAMETER: celsius = {args.celsius} (degC)')
 
     # Inline Q10. Detect and inline assigned variables with a constant value
     # which is set in the initial block.
@@ -279,10 +281,10 @@ for input_file, output_file in process_files:
             block.text = re.sub(rf'\b{name}\b', value, block.text)
 
     # Check the temperature in the INITIAL block.
-    if args.celsius is not None:
+    if 'celsius' in parameters:
         if block := blocks.get('INITIAL', None):
             signature, start, body = block.text.partition('{')
-            check_temp = f"\n    VERBATIM\n    assert(celsius == {args.celsius});\n    ENDVERBATIM\n"
+            check_temp = f"\n    VERBATIM\n    assert(celsius == {parameters['celsius'][0]});\n    ENDVERBATIM\n"
             block.text = signature + start + check_temp + body
 
     # Insert new LOCAL statements to replace the removed assigned variables.
