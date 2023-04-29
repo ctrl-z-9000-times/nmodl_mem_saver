@@ -13,6 +13,7 @@ import textwrap
 
 from nmodl_preprocessor.utils import *
 from nmodl_preprocessor.rw_patterns import RW_Visitor
+from nmodl_preprocessor.cpp_keywords import cpp_keywords
 from nmodl_preprocessor import nmodl_to_python
 
 website = "https://github.com/ctrl-z-9000-times/nmodl_preprocessor"
@@ -119,11 +120,12 @@ for input_file, output_file in process_files:
     for stmt in lookup(ANT.VERBATIM):
         for symbol in re.finditer(r'\b\w+\b', nmodl.to_nmodl(stmt)):
             verbatim_vars.add(symbol.group())
-    # Let's get this warning out of the way. As chunks of C/C++ code, VERBATIM
-    # statements can not be analysed. Assume that all symbols in VERBATIM
-    # blocks are both read from and written to. Do not attempt to alter the
-    # source code inside of VERBATIM blocks.
-    if lookup(ANT.VERBATIM):
+    verbatim_vars -= cpp_keywords
+    # Let's get this warning out of the way. As chunks of arbitrary C/C++ code,
+    # VERBATIM blocks can not be analysed. Assume that all symbols in VERBATIM
+    # blocks are publicly visible and are both read from and written to.
+    # Do not attempt to alter the source code inside of VERBATIM blocks.
+    if verbatim_vars:
         print_verbose('warning: VERBATIM may prevent optimization')
     # Find all symbols which are provided by or are visible to the larger NEURON simulation.
     external_vars = (
@@ -136,7 +138,8 @@ for input_file, output_file in process_files:
             state_vars |
             pointer_vars |
             functions |
-            procedures)
+            procedures |
+            verbatim_vars)
     # Find the units associated with each assigned variable.
     assigned_units = {name: '' for name in assigned_vars}
     for stmt in lookup(ANT.ASSIGNED_DEFINITION):
@@ -151,7 +154,7 @@ for input_file, output_file in process_files:
 
     # Inline the parameters.
     parameters = {}
-    for name in (parameter_vars - external_vars - verbatim_vars - rw.all_writes):
+    for name in (parameter_vars - external_vars - rw.all_writes):
         for node in sym_table.lookup(name).get_nodes():
             if node.is_param_assign() and node.value is not None:
                 value = float(STR(node.value))
@@ -218,8 +221,6 @@ for input_file, output_file in process_files:
     # Search for variables whose persistent state is ignored/overwritten.
     for block_name, read_variables in rw.reads.items():
         assigned_to_local -= read_variables
-    # Check for verbatim statements referencing this variable, which can not be analysed correctly.
-    assigned_to_local -= verbatim_vars
     # 
     for name in assigned_to_local:
         print_verbose(f'convert from ASSIGNED to LOCAL: {name}')
