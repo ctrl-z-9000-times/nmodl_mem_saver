@@ -198,7 +198,7 @@ for input_file, output_file in process_files:
             except:
                 pycode = prepend_line_numbers(x.pycode.rstrip())
                 print_verbose("error: while executing INITIAL block:\n" + pycode)
-                raise
+                initial_scope = {}
         # Filter out any assignments that were made with unknown input values.
         initial_scope = dict(x for x in initial_scope.items() if not math.isnan(x[1]))
         # Do not inline variables if they are written to in other blocks besides the INITIAL block.
