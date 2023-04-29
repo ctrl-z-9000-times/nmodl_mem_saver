@@ -101,24 +101,39 @@ for input_file, output_file in process_files:
         copy_files.append((input_file, output_file))
         continue
 
-    # Inline all of the functions and procedures, and then reload the modified
-    # AST so that the nmodl library starts from a clean state.
-    try:
-        nmodl.dsl.visitor.InlineVisitor().visit_program(AST)
-    except RuntimeError:
-        print_exception(error)
-        print_verbose("warning: could not inline all functions and procedures")
-    else:
-        nmodl_text = nmodl.to_nmodl(AST)
-    AST = nmodl.NmodlDriver().parse_string(nmodl_text)
-    nmodl.symtab.SymtabVisitor().visit_program(AST)
-
     # nmodl.ast.view(AST)             # Useful for debugging.
     # print(AST.get_symbol_table())   # Useful for debugging.
 
-    # Extract important data from the AST.
-    visitor             = nmodl.dsl.visitor.AstLookupVisitor()
-    lookup              = lambda n: visitor.lookup(AST, n)
+    # Find all symbols that are referenced in VERBATIM blocks.
+    visitor = nmodl.dsl.visitor.AstLookupVisitor()
+    lookup  = lambda ast_node_type: visitor.lookup(AST, ast_node_type)
+    verbatim_vars = set()
+    for stmt in lookup(ANT.VERBATIM):
+        for symbol in re.finditer(r'\b\w+\b', nmodl.to_nmodl(stmt)):
+            verbatim_vars.add(symbol.group())
+    verbatim_vars -= cpp_keywords
+    # Let's get this warning out of the way. As chunks of arbitrary C/C++ code,
+    # VERBATIM blocks can not be analysed. Assume that all symbols in VERBATIM
+    # blocks are publicly visible and are both read from and written to.
+    # Do not attempt to alter the source code inside of VERBATIM blocks.
+    if verbatim_vars:
+        print_verbose('warning: VERBATIM may prevent optimization')
+
+    # Inline all of the functions and procedures
+    if not verbatim_vars: # The NMODL library fails to correctly analyze VERBATIM blocks.
+        try:
+            nmodl.dsl.visitor.InlineVisitor().visit_program(AST)
+        except RuntimeError:
+            print_exception(error)
+            print_verbose("warning: could not inline all functions and procedures")
+        else:
+            nmodl_text = nmodl.to_nmodl(AST)
+        # Reload the modified AST so that the NMODL library starts from a clean state.
+        AST    = nmodl.NmodlDriver().parse_string(nmodl_text)
+        lookup = lambda ast_node_type: visitor.lookup(AST, ast_node_type)
+        nmodl.symtab.SymtabVisitor().visit_program(AST)
+
+    # Extract important data from the symbol table.
     sym_table           = AST.get_symbol_table()
     sym_type            = nmodl.symtab.NmodlType
     get_vars_with_prop  = lambda prop: set(STR(x.get_name()) for x in sym_table.get_variables_with_properties(prop))
@@ -134,20 +149,6 @@ for input_file, output_file in process_files:
     pointer_vars        = get_vars_with_prop(sym_type.pointer_var) | get_vars_with_prop(sym_type.bbcore_pointer_var)
     functions           = get_vars_with_prop(sym_type.function_block)
     procedures          = get_vars_with_prop(sym_type.procedure_block)
-    solve_blocks        = get_vars_with_prop(sym_type.to_solve)
-    inlined_blocks      = [x for x in (functions | procedures) if x not in solve_blocks]
-    # Find all symbols that are referenced in VERBATIM blocks.
-    verbatim_vars = set()
-    for stmt in lookup(ANT.VERBATIM):
-        for symbol in re.finditer(r'\b\w+\b', nmodl.to_nmodl(stmt)):
-            verbatim_vars.add(symbol.group())
-    verbatim_vars -= cpp_keywords
-    # Let's get this warning out of the way. As chunks of arbitrary C/C++ code,
-    # VERBATIM blocks can not be analysed. Assume that all symbols in VERBATIM
-    # blocks are publicly visible and are both read from and written to.
-    # Do not attempt to alter the source code inside of VERBATIM blocks.
-    if verbatim_vars:
-        print_verbose('warning: VERBATIM may prevent optimization')
     # Find all symbols which are provided by or are visible to the larger NEURON simulation.
     external_vars = (
             neuron_vars |
