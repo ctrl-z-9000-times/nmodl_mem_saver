@@ -2,15 +2,18 @@
 # Released under the MIT License
 
 from pathlib import Path
-from types import SimpleNamespace
 from sys import stderr
+from types import SimpleNamespace
 import argparse
 import math
+import re
+import shutil
+import textwrap
+
 import nmodl.ast
 import nmodl.dsl
 import nmodl.symtab
-import re
-import textwrap
+ANT = nmodl.ast.AstNodeType
 
 from nmodl_preprocessor.utils import *
 from nmodl_preprocessor.rw_patterns import RW_Visitor
@@ -67,15 +70,20 @@ elif input_path.is_dir(): # Process multiple files.
             process_files.append((input_file, output_file))
         elif input_file.suffix in ('.hoc', '.ses'):
             copy_files.append((input_file, output_file))
-else: raise RuntimeError('Unreachable')
+else:
+    raise RuntimeError('Unreachable')
+
+for input_file, output_file in process_files:
+    assert input_file != output_file, "operation would overwrite input file"
 
 # Main Loop.
 for input_file, output_file in process_files:
-    assert input_file != output_file, "operation would overwrite input file"
+    # 
     def print_verbose(*strings, **kwargs):
         print(input_file.name+':', *strings, **kwargs, file=stderr)
     def print_exception(exception):
         print_verbose(f"{type(exception).__name__}: {str(exception)}")
+    # 
     print_verbose(f'read file: "{input_file}"')
     with open(input_file, 'rt') as f:
         nmodl_text = f.read()
@@ -84,7 +92,6 @@ for input_file, output_file in process_files:
     nmodl_text = re.sub(r'\bINDEPENDENT\b\s*{[^{}]*}', '', nmodl_text)
 
     # Parse the nmodl file into an AST.
-    ANT = nmodl.ast.AstNodeType
     try:
         AST = nmodl.NmodlDriver().parse_string(nmodl_text)
         nmodl.symtab.SymtabVisitor().visit_program(AST)
@@ -203,9 +210,9 @@ for input_file, output_file in process_files:
         global_scope  = dict(nmodl_to_python.nmodl_builtins)
         initial_scope = {}
         # Represent unknown external input values as NaN's.
-        for name in external_vars:
+        for name in external_vars | parameter_vars:
             global_scope[name] = math.nan
-        # 
+        # Only use the parameters which we've committed to hard-coding.
         for name, (value, units) in parameters.items():
             global_scope[name] = value
         # 
@@ -338,7 +345,6 @@ for input_file, output_file in process_files:
 
 # Copy over any miscellaneous files from the source directory.
 for src, dst in copy_files:
-    import shutil
     print(f'Copy associated file: "{src.name}"')
     shutil.copy(src, dst)
 
