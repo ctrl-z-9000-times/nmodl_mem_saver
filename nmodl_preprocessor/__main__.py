@@ -293,8 +293,30 @@ for input_file, output_file in process_files:
         block.text = 'ASSIGNED {\n' + '\n'.join('    ' + x for x in new_lines) + '\n}'
 
     # Substitute the parameters with their values.
+    substitutions = dict(parameters)
+    substitutions.update(assigned_const_value)
+    # Delete any references to the substituted symbols out of TABLE statements.
+    # First setup a regex to find the TABLE statements.
+    list_regex  = r'\w+(\s*,\s*\w+)*'
+    table_regex = rf'\bTABLE\s+(?P<table_vars>{list_regex})\s+(DEPEND\s+(?P<depend_vars>{list_regex})\s+)?FROM\b'
+    table_regex = re.compile(table_regex)
+    def rewrite_table_stmt(match):
+        match = match.groupdict()
+        # Process each list of variables and store them back into the dict.
+        for section in ('table_vars', 'depend_vars'):
+            var_list = match.get(section, '')
+            var_list = re.split(r'\s+|,', var_list)
+            var_list = [name for name in var_list if name not in substitutions]
+            match[section] = ', '.join(var_list)
+        # Rewrite the TABLE statement using the new lists of variables.
+        table_vars  = match['table_vars']
+        depend_vars = match['depend_vars']
+        if depend_vars:
+            return f'TABLE {table_vars} DEPEND {depend_vars} FROM'
+        else:
+            return f'TABLE {table_vars} FROM'
+    # Search for the blocks which contain code.
     for block in blocks_list:
-        # Search for the blocks which contain code.
         if block.node.is_model(): continue
         if block.node.is_block_comment(): continue
         if block.node.is_neuron_block(): continue
@@ -304,25 +326,17 @@ for input_file, output_file in process_files:
         if block.node.is_state_block(): continue
         if block.node.is_assigned_block(): continue
         # 
-        substitutions = dict(parameters)
-        substitutions.update(assigned_const_value)
+        block.text = re.sub(table_regex, rewrite_table_stmt, block.text)
+        # 
         for name, (value, units) in substitutions.items():
             # The assignment to this variable is still present, it's just
             # converted to a local variable. The compiler should be able to
-            # eliminate this unused code.
+            # eliminate the dead/unused code.
             if block.node.is_initial_block() and name in assigned_const_value:
                 continue
-            # Delete references to the symbol from TABLE statements.
-            table_regex = rf'\bTABLE\s+(\w+\s*,\s*)*\w+\s+DEPEND\s+(\w+\s*,\s*)*{name}\b'
-            block.text = re.sub(
-                    table_regex,
-                    lambda m: re.sub(rf',?\s*{name}\b', '', m.group()),
-                    block.text)
-            # Substitute the symbol from general code.
+            # Substitute the symbol out of general code.
             value = str(value) + units
             block.text = re.sub(rf'\b{name}\b', value, block.text)
-        # Delete empty TABLE DEPEND statements.
-        block.text = re.sub(r'\bDEPEND\s+FROM\b', 'FROM', block.text)
 
     # Check the temperature in the INITIAL block.
     if 'celsius' in parameters:
