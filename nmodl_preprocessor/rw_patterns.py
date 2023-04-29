@@ -66,6 +66,3 @@ class RW_Visitor(nmodl.dsl.visitor.AstVisitor):
     def visit_neuron_block(self, node):
         pass # Does not contain any source code.
 
-    def visit_function_block(self, node):
-        pass # Functions are pure and can't access assigned variables.
-
