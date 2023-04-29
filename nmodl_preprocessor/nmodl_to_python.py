@@ -2,35 +2,43 @@
 Adapted from the tutorial:
 https://bluebrain.github.io/nmodl/html/notebooks/nmodl-python-tutorial.html#Easy-code-generation-using-AST-visitors
 """
+import math
 import textwrap
 import nmodl.dsl
 
-# This list of NMODL's built-in functions was copied from the documentation at:
-# https://github.com/neuronsimulator/nrn/blob/master/docs/guide/nmodls_built_in_functions.rst
-builtin_functions = (
-    "abs",
-)
-builtin_math_functions = (
-    "acos",
-    "asin",
-    "atan",
-    "atan2",
-    "ceil",
-    "cos",
-    "cosh",
-    "exp",
-    "fabs",
-    "floor",
-    "fmod",
-    "log",
-    "log10",
-    "pow",
-    "sin",
-    "sinh",
-    "sqrt",
-    "tan",
-    "tanh",
-)
+nmodl_builtins = {
+    # This list of NMODL's built-in functions was copied from the documentation at:
+    # https://github.com/neuronsimulator/nrn/blob/master/docs/guide/nmodls_built_in_functions.rst
+    "abs":      math.fabs,
+    "acos":     math.acos,
+    "asin":     math.asin,
+    "atan":     math.atan,
+    "atan2":    math.atan2,
+    "ceil":     math.ceil,
+    "cos":      math.cos,
+    "cosh":     math.cosh,
+    "exp":      math.exp,
+    "fabs":     math.fabs,
+    "floor":    math.floor,
+    "fmod":     math.fmod,
+    "log":      math.log,
+    "log10":    math.log10,
+    "pow":      math.pow,
+    "sin":      math.sin,
+    "sinh":     math.sinh,
+    "sqrt":     math.sqrt,
+    "tan":      math.tan,
+    "tanh":     math.tanh,
+    # These constants were copied from the documentation at:
+    # https://nrn.readthedocs.io/en/8.2.2/hoc/programming/math/constants.html
+    "PI":       3.14159265358979323846,
+    "E":        2.71828182845904523536,
+    "GAMMA":    0.57721566490153286060,  # Euler
+    "DEG":      57.29577951308232087680, # deg/radian
+    "PHI":      1.61803398874989484820,  # golden ratio
+    "FARADAY":  96520,   # coulombs/mole
+    "R":        8.31441, # molar gas constant, joules/mole/deg-K
+}
 
 class VerbatimError(ValueError): pass
 
@@ -103,10 +111,8 @@ class PyGenerator(nmodl.dsl.visitor.AstVisitor):
 
     def visit_function_call(self, node):
         name = node.name.get_node_name()
-        if name in builtin_functions:
+        if name in nmodl_builtins:
             pass
-        elif name in builtin_math_functions:
-            name = f"math.{name}"
         elif name == "net_send":
             raise ComplexityError()
         else:

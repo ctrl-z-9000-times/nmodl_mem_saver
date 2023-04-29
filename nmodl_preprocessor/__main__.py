@@ -183,7 +183,7 @@ for input_file, output_file in process_files:
             can_exec = False
             print_verbose('warning: complex INITIAL block may prevent optimization')
         # 
-        global_scope  = {"math": math} # Include the standard math library.
+        global_scope  = dict(nmodl_to_python.nmodl_builtins)
         initial_scope = {}
         # Represent unknown external input values as NaN's.
         for name in external_vars:
