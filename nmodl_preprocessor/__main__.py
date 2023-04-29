@@ -137,12 +137,12 @@ for input_file, output_file in process_files:
             pointer_vars |
             functions |
             procedures)
-    # 
+    # Find the units associated with each assigned variable.
     assigned_units = {name: '' for name in assigned_vars}
     for stmt in lookup(ANT.ASSIGNED_DEFINITION):
         if stmt.unit:
             assigned_units[STR(stmt.name)] = STR(stmt.unit)
-    # 
+    # Code analysis: determine the read/write usage patterns for each variable.
     rw = RW_Visitor()
     rw.visit_program(AST)
     # Split the document into its top-level blocks for easier manipulation.
@@ -318,6 +318,5 @@ for src, dst in copy_files:
     print(f'Copy associated file: "{src.name}"')
     shutil.copy(src, dst)
 
-# Symbol for the installation script to import and call.
-_placeholder = lambda: None
+_placeholder = lambda: None # Symbol for the CLI script to import and call.
 
