@@ -171,8 +171,8 @@ for input_file, output_file in process_files:
             parameters['celsius'] = (args.celsius, '(degC)')
             print_verbose(f'inline PARAMETER: celsius = {args.celsius} (degC)')
 
-    # Inline Q10. Detect and inline assigned variables with a constant value
-    # which is set in the initial block.
+    # Inline Q10. Detect and inline assigned variables with known constant
+    # values that are set in the initial block.
     assigned_const_value = {}
     if initial_block := blocks.get('INITIAL', None):
         # Convert the INITIAL block into python.
@@ -198,23 +198,29 @@ for input_file, output_file in process_files:
         if can_exec:
             try:
                 exec(x.pycode, global_scope, initial_scope)
-            except:
+            except Exception as error:
                 pycode = prepend_line_numbers(x.pycode.rstrip())
                 print_verbose("error: while executing INITIAL block:\n" + pycode)
                 initial_scope = {}
-        # Filter out any assignments that were made with unknown input values.
-        initial_scope = dict(x for x in initial_scope.items() if not math.isnan(x[1]))
-        # Do not inline variables if they are written to in other blocks besides the INITIAL block.
+        # Find all of the variables which are written to durring the runtime.
+        # These variables obviously do not have a constant value.
         runtime_writes_to = set()
         for block_name, variables in rw.writes.items():
             if block_name != 'INITIAL':
                 runtime_writes_to.update(variables)
-        # 
-        for name in ((assigned_vars & set(initial_scope)) - runtime_writes_to - verbatim_vars):
-            value = initial_scope[name]
-            units = assigned_units[name]
-            assigned_const_value[name] = (value, "")
-            print_verbose(f'inline ASSIGNED with constant value: {name} = {value} {units}')
+        # Search the local scope of the INITIAL block for variables which can be optimized away.
+        for name, value in initial_scope.items():
+            if name in assigned_vars:
+                if name in external_vars: continue
+                if name in runtime_writes_to: continue
+                # Filter out values that can not be computed ahead of time
+                # because they depends on unknown external values (like the
+                # voltage or the cell diameter).
+                if math.isnan(value): continue
+                # 
+                units = assigned_units[name]
+                assigned_const_value[name] = (value, units)
+                print_verbose(f'inline ASSIGNED with constant value: {name} = {value} {units}')
 
     # Convert assigned variables into local variables as able.
     assigned_to_local = set(assigned_vars) - set(external_vars) - set(assigned_const_value)
