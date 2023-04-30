@@ -68,13 +68,17 @@ elif input_path.is_dir(): # Process multiple files.
         output_file = output_path.joinpath(input_file.name)
         if input_file.suffix == ".mod":
             process_files.append((input_file, output_file))
-        elif input_file.suffix in ('.hoc', '.ses', '.inc'):
+        else:
             copy_files.append((input_file, output_file))
 else:
     raise RuntimeError('Unreachable')
 
 for input_file, output_file in process_files:
     assert input_file != output_file, "operation would overwrite input file"
+
+# Don't remove parameters with these names, due to unexpected name conflicts
+# caused by auto-generated initial values.
+parameter_name_conflicts = {'y0', 'j0'}
 
 # Main Loop.
 for input_file, output_file in process_files:
@@ -135,7 +139,7 @@ for input_file, output_file in process_files:
     if not verbatim_vars: # The NMODL library fails to correctly analyze VERBATIM blocks.
         try:
             nmodl.dsl.visitor.InlineVisitor().visit_program(AST)
-        except RuntimeError:
+        except RuntimeError as error:
             print_exception(error)
             print_verbose("warning: could not inline all functions and procedures")
         else:
@@ -153,6 +157,7 @@ for input_file, output_file in process_files:
     read_ion_vars       = get_vars_with_prop(sym_type.read_ion_var)
     write_ion_vars      = get_vars_with_prop(sym_type.write_ion_var)
     nonspecific_vars    = get_vars_with_prop(sym_type.nonspecific_cur_var)
+    electrode_cur_vars  = get_vars_with_prop(sym_type.electrode_cur_var)
     range_vars          = get_vars_with_prop(sym_type.range_var)
     global_vars         = get_vars_with_prop(sym_type.global_var)
     parameter_vars      = get_vars_with_prop(sym_type.param_assign)
@@ -164,10 +169,10 @@ for input_file, output_file in process_files:
     reaction_vars       = set(STR(x.get_node_name()) for x in lookup(ANT.REACT_VAR_NAME))
     compartment_vars    = set()
     for c in lookup(ANT.COMPARTMENT):
-        compartment_vars |= set(STR(x.get_node_name()) for x in c.names)
+        compartment_vars.update(STR(x.get_node_name()) for x in c.names)
     diffusion_vars = set()
     for d in lookup(ANT.LON_DIFUSE):
-        diffusion_vars |= set(STR(x.get_node_name()) for x in d.names)
+        diffusion_vars.update(STR(x.get_node_name()) for x in d.names)
     state_vars = state_vars | reaction_vars | compartment_vars | diffusion_vars
     # Find all symbols which are provided by or are visible to the larger NEURON simulation.
     external_vars = (
@@ -175,6 +180,7 @@ for input_file, output_file in process_files:
             read_ion_vars |
             write_ion_vars |
             nonspecific_vars |
+            electrode_cur_vars |
             range_vars |
             global_vars |
             state_vars |
@@ -196,7 +202,7 @@ for input_file, output_file in process_files:
 
     # Inline the parameters.
     parameters = {}
-    for name in (parameter_vars - external_vars - rw.all_writes):
+    for name in (parameter_vars - external_vars - rw.all_writes - parameter_name_conflicts):
         for node in sym_table.lookup(name).get_nodes():
             if node.is_param_assign() and node.value is not None:
                 value = float(STR(node.value))
@@ -236,6 +242,9 @@ for input_file, output_file in process_files:
         # Only use the parameters which we've committed to hard-coding.
         for name, (value, units) in parameters.items():
             global_scope[name] = value
+        # Zero initialize the ASSIGNED and STATE variables.
+        for name in assigned_vars | state_vars:
+            global_scope[name] = 0.0
         # 
         if can_exec:
             try:
@@ -306,16 +315,20 @@ for input_file, output_file in process_files:
     # Delete any references to the substituted symbols out of TABLE statements.
     # First setup a regex to find the TABLE statements.
     list_regex  = r'\w+(\s*,\s*\w+)*'
-    table_regex = rf'\bTABLE\s+(?P<table_vars>{list_regex})\s+(DEPEND\s+(?P<depend_vars>{list_regex})\s+)?FROM\b'
+    table_regex = rf'\bTABLE\s+(?P<table_vars>{list_regex}\s+)?(DEPEND\s+(?P<depend_vars>{list_regex})\s+)?FROM\b'
     table_regex = re.compile(table_regex)
     def rewrite_table_stmt(match):
         match = match.groupdict()
         # Process each list of variables and store them back into the dict.
         for section in ('table_vars', 'depend_vars'):
             var_list = match[section]
-            if var_list is not None:
+            if var_list is None:
+                var_list = ''
+            else:
                 var_list = re.split(r'\s+|,', var_list)
-                var_list = [name for name in var_list if name not in substitutions]
+                var_list = [x for x in var_list if x] # Filter out empty strings.
+                var_list = [x for x in var_list if x not in substitutions] # Filter out hardcoded parameters.
+                var_list = [x for x in var_list if x not in assigned_to_local] # Filter out local vars with no persistent state.
                 var_list = ', '.join(var_list)
             match[section] = var_list
         # Rewrite the TABLE statement using the new lists of variables.

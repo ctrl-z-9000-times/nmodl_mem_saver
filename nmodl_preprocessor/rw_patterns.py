@@ -21,12 +21,27 @@ class RW_Visitor(nmodl.dsl.visitor.AstVisitor):
         # Look for top level code blocks.
         if self.current_block is None:
             self.current_block = get_block_name(node.parent)
-            self.reads[self.current_block]  = set()
+            parameters = set(STR(x.get_node_name()) for x in getattr(node.parent, 'parameters', []))
+            self.reads[self.current_block]  = parameters
             self.writes[self.current_block] = set()
             node.visit_children(self)
             self.current_block = None
         else:
             node.visit_children(self)
+
+    def visit_reaction_statement(self, node):
+        self.visit_diff_eq_expression(node)
+
+    def visit_diff_eq_expression(self, node):
+        # The solver may move kinetic equations into different code blocks.
+        current_block = self.current_block
+        self.current_block = object()
+        self.reads[self.current_block]  = set()
+        self.writes[self.current_block] = set()
+        node.visit_children(self)
+        self.reads[current_block]  |= self.reads.pop(self.current_block)
+        self.writes[current_block] |= self.writes.pop(self.current_block)
+        self.current_block = current_block
 
     def visit_binary_expression(self, node):
         if node.op.eval() == '=':

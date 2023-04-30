@@ -84,7 +84,10 @@ class PyGenerator(nmodl.dsl.visitor.AstVisitor):
         node.rhs.accept(self)
 
     def visit_var_name(self, node):
-        self.pycode += node.name.get_node_name()
+        if node.name.is_indexed_name():
+            self.visit_indexed_name(node.name)
+        else:
+            self.pycode += node.name.get_node_name()
 
     def visit_integer(self, node):
         self.pycode += nmodl.to_nmodl(node)
@@ -131,5 +134,8 @@ class PyGenerator(nmodl.dsl.visitor.AstVisitor):
 
     def visit_while_statement(self, node):
         # Can not guarantee correct results BC the condition might reference unknown values.
+        raise ComplexityError()
+
+    def visit_indexed_name(self, node):
         raise ComplexityError()
 
