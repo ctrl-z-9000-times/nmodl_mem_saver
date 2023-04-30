@@ -161,6 +161,14 @@ for input_file, output_file in process_files:
     pointer_vars        = get_vars_with_prop(sym_type.pointer_var) | get_vars_with_prop(sym_type.bbcore_pointer_var)
     functions           = get_vars_with_prop(sym_type.function_block)
     procedures          = get_vars_with_prop(sym_type.procedure_block)
+    reaction_vars       = set(STR(x.get_node_name()) for x in lookup(ANT.REACT_VAR_NAME))
+    compartment_vars    = set()
+    for c in lookup(ANT.COMPARTMENT):
+        compartment_vars |= set(STR(x.get_node_name()) for x in c.names)
+    diffusion_vars = set()
+    for d in lookup(ANT.LON_DIFUSE):
+        diffusion_vars |= set(STR(x.get_node_name()) for x in d.names)
+    state_vars = state_vars | reaction_vars | compartment_vars | diffusion_vars
     # Find all symbols which are provided by or are visible to the larger NEURON simulation.
     external_vars = (
             neuron_vars |
