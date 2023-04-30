@@ -327,8 +327,15 @@ for input_file, output_file in process_files:
         if block.node.is_param_block(): continue
         if block.node.is_state_block(): continue
         if block.node.is_assigned_block(): continue
+        if block.node.is_local_list_statement(): continue
+        if block.node.is_define(): continue
         # 
         block.text = re.sub(table_regex, rewrite_table_stmt, block.text)
+        # Don't substitute function/procedure arguments.
+        declaration, brace, body = block.text.partition('{')
+        if not brace:
+            body = declaration
+            declaration = ''
         # 
         for name, (value, units) in substitutions.items():
             # The assignment to this variable is still present, it's just
@@ -341,7 +348,8 @@ for input_file, output_file in process_files:
                 value = int(value)
             # Substitute the symbol out of general code.
             value = str(value) + units
-            block.text = re.sub(rf'\b{name}\b', value, block.text)
+            body  = re.sub(rf'\b{name}\b', value, body)
+        block.text = declaration + brace + body
 
     # Check the temperature in the INITIAL block.
     if 'celsius' in parameters:
