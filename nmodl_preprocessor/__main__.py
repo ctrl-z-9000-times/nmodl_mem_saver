@@ -304,10 +304,12 @@ for input_file, output_file in process_files:
         match = match.groupdict()
         # Process each list of variables and store them back into the dict.
         for section in ('table_vars', 'depend_vars'):
-            var_list = match.get(section, '')
-            var_list = re.split(r'\s+|,', var_list)
-            var_list = [name for name in var_list if name not in substitutions]
-            match[section] = ', '.join(var_list)
+            var_list = match[section]
+            if var_list is not None:
+                var_list = re.split(r'\s+|,', var_list)
+                var_list = [name for name in var_list if name not in substitutions]
+                var_list = ', '.join(var_list)
+            match[section] = var_list
         # Rewrite the TABLE statement using the new lists of variables.
         table_vars  = match['table_vars']
         depend_vars = match['depend_vars']
