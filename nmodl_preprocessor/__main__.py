@@ -334,6 +334,9 @@ for input_file, output_file in process_files:
             # eliminate the dead/unused code.
             if block.node.is_initial_block() and name in assigned_const_value:
                 continue
+            # Some NMODL statements care about int vs float, so don't cast integers to float.
+            if float(value) == int(value):
+                value = int(value)
             # Substitute the symbol out of general code.
             value = str(value) + units
             block.text = re.sub(rf'\b{name}\b', value, block.text)
