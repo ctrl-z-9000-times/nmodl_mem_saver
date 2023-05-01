@@ -76,7 +76,7 @@ else:
 for input_file, output_file in process_files:
     assert input_file != output_file, "operation would overwrite input file"
 
-# Don't remove parameters with these names, due to unexpected name conflicts
+# Don't remove parameters with these names, because of unexpected name conflicts
 # caused by auto-generated initial values.
 parameter_name_conflicts = {'y0', 'j0'}
 
@@ -174,6 +174,12 @@ for input_file, output_file in process_files:
     for d in lookup(ANT.LON_DIFUSE):
         diffusion_vars.update(STR(x.get_node_name()) for x in d.names)
     state_vars = state_vars | reaction_vars | compartment_vars | diffusion_vars
+    # Check for array variables and ignore them. They should have already been
+    # unrolled into individual variables by now.
+    for x in sym_table.get_variables_with_properties(sym_type.assigned_definition):
+        node = x.get_node()
+        if '[' in str(node):
+            assigned_vars.discard(STR(x.get_name()))
     # Find all symbols which are provided by or are visible to the larger NEURON simulation.
     external_vars = (
             neuron_vars |
