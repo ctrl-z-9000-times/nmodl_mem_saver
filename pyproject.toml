@@ -7,7 +7,7 @@ packages = ["nmodl_preprocessor"]
 
 [project]
 name = "nmodl_preprocessor"
-version = "1.0.5"
+version = "1.0.6"
 description = "Optimize NMODL files for the NEURON simulator"
 readme = "README.md"
 license = {text = "MIT"}
@@ -26,6 +26,6 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
-requires-python = ">=3.7"
+requires-python = ">=3.8"
 dependencies = ["nmodl"]
 scripts = {nmodl_preprocessor = "nmodl_preprocessor:__main__._placeholder"}
