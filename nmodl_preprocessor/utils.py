@@ -1,6 +1,8 @@
 STR = lambda x: str(x).strip() # nmodl sometimes leaves trailing whitespace on stuff.
 
 def get_block_name(node):
+    if node.is_ba_block():
+        return get_block_name(node.parent)
     if name := getattr(node, 'name', None):
         return STR(name)
     try:
