@@ -87,15 +87,19 @@ for input_file, output_file in process_files:
         print(input_file.name+':', *strings, **kwargs, file=stderr)
     def print_exception(exception):
         print_verbose(f"{type(exception).__name__}: {str(exception)}")
-    # 
+    # First read the file as binary and discard as much of it as possible.
     print_verbose(f'read file: "{input_file}"')
-    with open(input_file, 'rt') as f:
+    with open(input_file, 'rb') as f:
         nmodl_text = f.read()
 
+    # Remove comments because they might contain invalid utf-8 text.
+    nmodl_text = re.sub(rb'(?s)\bCOMMENT\b(?!\bENDCOMMENT\b)*\bENDCOMMENT\b', b'', nmodl_text)
+
     # Remove INDEPENDENT statements because they're unnecessary and the nmodl library does not like them.
-    nmodl_text = re.sub(r'\bINDEPENDENT\b\s*{[^{}]*}', '', nmodl_text)
+    nmodl_text = re.sub(rb'\bINDEPENDENT\b\s*{[^{}]*}', b'', nmodl_text)
 
     # Parse the nmodl file into an AST.
+    nmodl_text = nmodl_text.decode()
     try:
         AST = nmodl.NmodlDriver().parse_string(nmodl_text)
         nmodl.symtab.SymtabVisitor().visit_program(AST)
@@ -409,6 +413,10 @@ for input_file, output_file in process_files:
 
     # Join the top-level blocks back into one big string and save it to the output file.
     nmodl_text = '\n\n'.join(x.text for x in blocks_list) + '\n'
+
+    # Break up very long lines into multiple lines as able.
+    nmodl_text = re.sub(r'.{200}\b', lambda m: m.group() + '\n', nmodl_text)
+
     print_verbose(f'write file: "{output_file}"')
     with output_file.open('w') as f:
         f.write(nmodl_text)
