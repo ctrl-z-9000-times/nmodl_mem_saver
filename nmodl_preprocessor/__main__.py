@@ -93,7 +93,7 @@ for input_file, output_file in process_files:
         nmodl_text = f.read()
 
     # Remove comments because they might contain invalid utf-8 text.
-    nmodl_text = re.sub(rb'(?s)\bCOMMENT\b(?!\bENDCOMMENT\b)*\bENDCOMMENT\b', b'', nmodl_text)
+    nmodl_text = re.sub(rb'(?s)\bCOMMENT\b.*?\bENDCOMMENT\b', b'', nmodl_text)
 
     # Remove INDEPENDENT statements because they're unnecessary and the nmodl library does not like them.
     nmodl_text = re.sub(rb'\bINDEPENDENT\b\s*{[^{}]*}', b'', nmodl_text)
