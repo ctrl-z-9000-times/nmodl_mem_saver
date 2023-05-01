@@ -80,6 +80,12 @@ for input_file, output_file in process_files:
 # caused by auto-generated initial values.
 parameter_name_conflicts = {'y0', 'j0'}
 
+# Check for known problematic files.
+for input_file, output_file in list(process_files):
+    if input_file.name in {'vecst.mod'}:
+        process_files.remove((input_file, output_file))
+        copy_files.append((input_file, output_file))
+
 # Main Loop.
 for input_file, output_file in process_files:
     # 
@@ -415,7 +421,7 @@ for input_file, output_file in process_files:
     nmodl_text = '\n\n'.join(x.text for x in blocks_list) + '\n'
 
     # Break up very long lines into multiple lines as able.
-    nmodl_text = re.sub(r'.{200}\b', lambda m: m.group() + '\n', nmodl_text)
+    nmodl_text = re.sub(r'.{500}\b', lambda m: m.group() + '\n', nmodl_text)
 
     print_verbose(f'write file: "{output_file}"')
     with output_file.open('w') as f:
