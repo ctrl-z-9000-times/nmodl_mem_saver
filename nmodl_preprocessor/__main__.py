@@ -36,9 +36,8 @@ if not output_dir.exists():
 else:
     assert output_dir.is_dir(), "output_dir is not a directory"
     # Delete any existing mod files.
-    for x in output_dir.iterdir():
-        if x.name.startswith('_opt_') and x.name.endswith('.mod'):
-            x.remove()
+    for x in output_dir.glob('*.mod'):
+        x.unlink()
 
 
 # 
@@ -82,11 +81,16 @@ code_files = hoc_files + ses_files + py_files
 
 # Get all of the words used in the projects source code.
 external_symbols = set()
-word_regex = re.compile(r'\b\w+\b')
+word_regex = re.compile(br'\b\w+\b')
 for path in code_files:
-    with open(path, 'rt') as f:
+    print(path)
+    with open(path, 'rb') as f:
         text = f.read()
-    external_symbols.update(match.group() for match in re.finditer(word_regex, text))
+    for match in re.finditer(word_regex, text):
+        try:
+            external_symbols.add(match.group().decode())
+        except UnicodeDecodeError:
+            pass
 
 # TODO: Search for assignments to celsius in the code files. Use regex.
 
