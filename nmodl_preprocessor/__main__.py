@@ -13,85 +13,77 @@ parser = argparse.ArgumentParser(prog='nmodl_preprocessor',
     epilog=f"For more information or to report a problem go to:\n{website}",
     formatter_class=argparse.RawDescriptionHelpFormatter)
 
-parser.add_argument('input_paths', type=str,
-        nargs='+',
-        help="input filenames and directories")
+parser.add_argument('project_path', type=str,
+        help="input root directory of all simulation files.")
 
-parser.add_argument('output_directory', type=str)
+parser.add_argument('output_path', type=str,
+        help="output directory for nmodl files.")
 
 parser.add_argument('--celsius', type=float, default=None,
         help="temperature of the simulation")
 
 args = parser.parse_args()
 
-# TODO: Environment variable "MODL_INCLUDES"
-
-# Sanity check the input_paths.
-input_paths = [Path(path).resolve() for path in args.input_paths]
-for path in input_paths:
-    assert path.exists(), f'file or directory not found: "{path}"'
-# Collect all of the input_files.
-extensions  = {'.mod', '.hoc', '.ses', 'py'}
-input_files = {} # Dict of file-name -> path
-def add_file(x, override=False):
-    if x.is_file() and x.suffix in extensions:
-        if not override:
-            assert x.name not in input_files, f'duplicate file "{x.name}"'
-        input_files[x.name] = x
-# Add all input directories, check for duplicate project files.
-for path in input_paths:
-    if path.is_dir():
-        for x in path.iterdir():
-            add_file(x)
-# Scan the current working directory, override existing files.
-for path in Path.cwd().iterdir():
-    add_file(path, override=True)
-# Add all input files, override existing files.
-for path in input_paths:
-    add_file(path, override=True)
-
-# Sort the input_files by file type.
-nmodl_files = []
-code_files  = []
-copy_files  = []
-for path in input_files.values():
-    if   path.suffix == '.mod': nmodl_files.append(path)
-    elif path.suffix == '.hoc': code_files.append(path)
-    elif path.suffix == '.ses': code_files.append(path)
-    elif path.suffix == '.py':  code_files.append(path)
-    else:
-        copy_files.append(path)
-
 # Setup the output directory.
-output_directory = Path(args.output_directory).resolve()
-if not output_directory.exists():
-    assert output_directory.parent.is_dir(), f'directory not found: {output_directory.parent}'
-    output_directory.mkdir()
+output_path = Path(args.output_path).resolve()
+if not output_path.exists():
+    assert output_path.parent.is_dir(), f'directory not found: {output_path.parent}'
+    output_path.mkdir()
 else:
-    assert output_directory.is_dir(), "output_directory is not a directory"
+    assert output_path.is_dir(), "output_path must be a directory"
+    # Delete any existing mod files.
+    for x in output_path.iterdir():
+        if x.name.startswith('_opt_') and x.name.endswith('.mod'):
+            x.remove()
 
-# Get all of the words used in each file.
-words = {}
+
+# Collect all of the input_files.
+project_path = Path(args.project_path).resolve()
+assert project_path.exists(), f'file or directory not found: "{project_path}"'
+nmodl_files = {} # Dict of file-name -> path
+code_files  = {} # Dict of file-name -> path
+copy_files  = {} # Dict of file-name -> path
+def scan_dir(path):
+    for x in path.iterdir():
+        if x.is_dir():
+            scan_dir(x)
+        elif x.is_file():
+            assert x.name not in (nmodl_files | code_files), f'duplicate file "{x.name}"'
+            if x.suffix == '.mod':
+                nmodl_files[x.name] = x
+            elif x.suffix in {'.hoc', '.ses', '.py'}:
+                code_files[x.name] = x
+scan_dir(project_path)
+
+include_dirs = {path.parent for path in nmodl_files.values()}
+for path in include_dirs:
+    for x in path.iterdir():
+        if x.suffix in {'.c', '.cpp', '.h', '.hpp'}:
+            copy_files[x.name] = x
+
+# Get all of the words used in the projects source code.
+external_symbols = set()
 word_regex = re.compile(r'\b\w+\b')
-for path in code_files:
+for path in code_files.values():
     with open(path, 'rt') as f:
         text = f.read()
-    words[path.name] = {match.group() for match in re.finditer(word_regex, text)}
+    external_symbols.update(match.group() for match in re.finditer(word_regex, text))
+
+# TODO: Search for assignments to celsius in the code files. Use regex.
 
 # Process the NMODL files.
-for path in nmodl_files:
-    external_symbols = set()
-    for file, symbols in words.items():
-        if file != path.name:
-            external_symbols.update(symbols)
-    output_file = output_directory.joinpath(path.name)
-    optimize_nmodl.optimize_nmodl(path, output_file, external_symbols, args.celsius)
+for path in nmodl_files.values():
+    if path.name == 'vecst.mod':
+        copy_files.add(path)
+        continue
+    output_file = output_path.joinpath(f'_opt_{path.name}')
+    okay = optimize_nmodl.optimize_nmodl(path, output_file, external_symbols, args.celsius)
+    if not okay:
+        copy_files.add(path)
 
-# Copy over any miscellaneous files from the source directory.
-for path in code_files + copy_files:
-    print(f'Copy associated file: "{path.name}"')
-    dest = output_directory.joinpath(path.name)
-    shutil.copy(path, dest)
+# Copy any C/C++ files that might have been included.
+for path in copy_files.values():
+    shutil.copy(path, output_path.joinpath(path.name))
 
 _placeholder = lambda: None # Symbol for the CLI script to import and call.
 

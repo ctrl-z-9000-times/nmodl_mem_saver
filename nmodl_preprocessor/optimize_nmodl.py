@@ -18,8 +18,7 @@ from nmodl_preprocessor import nmodl_to_python
 # caused by auto-generated initial values.
 parameter_name_conflicts = {'y0', 'j0'}
 
-def optimize_nmodl(input_file, output_file, external_symbols, celsius=None):
-    assert input_file != output_file, "operation would overwrite input file"
+def optimize_nmodl(input_file, output_file, external_symbols, celsius=None) -> bool:
     # 
     def print_verbose(*strings, **kwargs):
         print(input_file.name+':', *strings, **kwargs, file=stderr)
@@ -44,8 +43,7 @@ def optimize_nmodl(input_file, output_file, external_symbols, celsius=None):
     except RuntimeError as error:
         print_exception(error)
         print_verbose("warning: could not parse and build symbol table")
-        copy_files.append((input_file, output_file))
-        return
+        return False
 
     # nmodl.ast.view(AST)             # Useful for debugging.
     # print(AST.get_symbol_table())   # Useful for debugging.
@@ -61,8 +59,7 @@ def optimize_nmodl(input_file, output_file, external_symbols, celsius=None):
     lookup  = lambda ast_node_type: visitor.lookup(AST, ast_node_type)
     if lookup(ANT.INCLUDE):
         print_verbose('warning: INCLUDE prevent optimization')
-        copy_files.append((input_file, output_file))
-        return
+        return False
 
     # Find all symbols that are referenced in VERBATIM blocks.
     verbatim_vars = set()
@@ -90,6 +87,13 @@ def optimize_nmodl(input_file, output_file, external_symbols, celsius=None):
         AST    = nmodl.NmodlDriver().parse_string(nmodl_text)
         lookup = lambda ast_node_type: visitor.lookup(AST, ast_node_type)
         nmodl.symtab.SymtabVisitor().visit_program(AST)
+
+    # Find all external references to this mechanism.
+    external_refs  = set()
+    suffix = '_' + STR(next(iter(lookup(ANT.SUFFIX))).get_node_name())
+    for x in external_symbols:
+        if x.endswith(suffix):
+            external_refs.add(x[:-len(suffix)])
 
     # Extract important data from the symbol table.
     sym_table           = AST.get_symbol_table()
@@ -135,6 +139,7 @@ def optimize_nmodl(input_file, output_file, external_symbols, celsius=None):
             pointer_vars |
             functions |
             procedures |
+            external_refs |
             verbatim_vars)
     # Find the units associated with each assigned variable.
     assigned_units = {name: '' for name in assigned_vars}
@@ -358,4 +363,5 @@ def optimize_nmodl(input_file, output_file, external_symbols, celsius=None):
     print_verbose(f'write file: "{output_file}"')
     with output_file.open('w') as f:
         f.write(nmodl_text)
+    return True
 
