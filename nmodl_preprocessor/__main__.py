@@ -13,11 +13,15 @@ parser = argparse.ArgumentParser(prog='nmodl_preprocessor',
     epilog=f"For more information or to report a problem go to:\n{website}",
     formatter_class=argparse.RawDescriptionHelpFormatter)
 
-parser.add_argument('project_path', type=str,
-        help="input root directory of all simulation files.")
+parser.add_argument('project_dir', type=str,
+        help="root directory for all simulation files")
 
-parser.add_argument('output_path', type=str,
-        help="output directory for nmodl files.")
+parser.add_argument('model_dir', type=str,
+        nargs='?',
+        help="input mechanisms directory")
+
+parser.add_argument('output_dir', type=str,
+        help="output directory for nmodl files")
 
 parser.add_argument('--celsius', type=float, default=None,
         help="temperature of the simulation")
@@ -25,46 +29,61 @@ parser.add_argument('--celsius', type=float, default=None,
 args = parser.parse_args()
 
 # Setup the output directory.
-output_path = Path(args.output_path).resolve()
-if not output_path.exists():
-    assert output_path.parent.is_dir(), f'directory not found: {output_path.parent}'
-    output_path.mkdir()
+output_dir = Path(args.output_dir).resolve()
+if not output_dir.exists():
+    assert output_dir.parent.is_dir(), f'directory not found: {output_dir.parent}'
+    output_dir.mkdir()
 else:
-    assert output_path.is_dir(), "output_path must be a directory"
+    assert output_dir.is_dir(), "output_dir is not a directory"
     # Delete any existing mod files.
-    for x in output_path.iterdir():
+    for x in output_dir.iterdir():
         if x.name.startswith('_opt_') and x.name.endswith('.mod'):
             x.remove()
 
 
-# Collect all of the input_files.
-project_path = Path(args.project_path).resolve()
-assert project_path.exists(), f'file or directory not found: "{project_path}"'
-nmodl_files = {} # Dict of file-name -> path
-code_files  = {} # Dict of file-name -> path
-copy_files  = {} # Dict of file-name -> path
-def scan_dir(path):
-    for x in path.iterdir():
-        if x.is_dir():
-            scan_dir(x)
-        elif x.is_file():
-            assert x.name not in (nmodl_files | code_files), f'duplicate file "{x.name}"'
-            if x.suffix == '.mod':
-                nmodl_files[x.name] = x
-            elif x.suffix in {'.hoc', '.ses', '.py'}:
-                code_files[x.name] = x
-scan_dir(project_path)
+# 
+project_dir = Path(args.project_dir).resolve()
+assert project_dir.exists(), f'directory not found: "{project_dir}"'
+assert project_dir.is_dir(), "project_dir is not a directory"
 
-include_dirs = {path.parent for path in nmodl_files.values()}
-for path in include_dirs:
-    for x in path.iterdir():
-        if x.suffix in {'.c', '.cpp', '.h', '.hpp'}:
-            copy_files[x.name] = x
+# Find all of the mechanism files.
+if args.model_dir:
+    model_dir = Path(args.model_dir).resolve()
+    assert model_dir.exists(), f'directory not found: "{model_dir}"'
+    nmodl_files = sorted(model_dir.glob('*.mod'))
+else:
+    # Recursively search for the model directory.
+    stack = [project_dir]
+    while path := stack.pop():
+        model_dir = path
+        if nmodl_files := sorted(model_dir.glob('*.mod')):
+            break # Stop searching after finding the model directory.
+        else:
+            for x in path.iterdir():
+                if x.is_dir():
+                    stack.push(x)
+    else:
+        model_dir = None
+
+# Copy any C/C++ files that might have been included into the mechanisms.
+copy_files = []
+if model_dir:
+    copy_files = (
+            sorted(model_dir.glob('*.c')) +
+            sorted(model_dir.glob('*.h')) +
+            sorted(model_dir.glob('*.cpp')) +
+            sorted(model_dir.glob('*.hpp')))
+
+# 
+hoc_files  = sorted(project_dir.glob("**/*.hoc"))
+ses_files  = sorted(project_dir.glob("**/*.ses"))
+py_files   = sorted(project_dir.glob("**/*.py"))
+code_files = hoc_files + ses_files + py_files
 
 # Get all of the words used in the projects source code.
 external_symbols = set()
 word_regex = re.compile(r'\b\w+\b')
-for path in code_files.values():
+for path in code_files:
     with open(path, 'rt') as f:
         text = f.read()
     external_symbols.update(match.group() for match in re.finditer(word_regex, text))
@@ -72,18 +91,18 @@ for path in code_files.values():
 # TODO: Search for assignments to celsius in the code files. Use regex.
 
 # Process the NMODL files.
-for path in nmodl_files.values():
+for path in nmodl_files:
     if path.name == 'vecst.mod':
-        copy_files.add(path)
+        copy_files.append(path)
         continue
-    output_file = output_path.joinpath(f'_opt_{path.name}')
+    output_file = output_dir.joinpath(f'_opt_{path.name}')
     okay = optimize_nmodl.optimize_nmodl(path, output_file, external_symbols, args.celsius)
     if not okay:
-        copy_files.add(path)
+        copy_files.append(path)
 
 # Copy any C/C++ files that might have been included.
-for path in copy_files.values():
-    shutil.copy(path, output_path.joinpath(path.name))
+for path in copy_files:
+    shutil.copy(path, output_dir.joinpath(path.name))
 
 _placeholder = lambda: None # Symbol for the CLI script to import and call.
 
