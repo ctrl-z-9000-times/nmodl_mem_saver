@@ -23,9 +23,6 @@ parser.add_argument('model_dir', type=str,
 parser.add_argument('output_dir', type=str,
         help="output directory for nmodl files")
 
-parser.add_argument('--celsius', type=float, default=None,
-        help="temperature of the simulation")
-
 args = parser.parse_args()
 
 # Setup the output directory.
@@ -79,11 +76,20 @@ ses_files  = sorted(project_dir.glob("**/*.ses"))
 py_files   = sorted(project_dir.glob("**/*.py"))
 code_files = hoc_files + ses_files + py_files
 
-# Get all of the words used in the projects source code.
-external_symbols = set()
-word_regex = re.compile(br'\b\w+\b')
+for path in nmodl_files:
+    print(f'Mechanism: {path}')
+
 for path in code_files:
-    print(path)
+    print(f'Source Code: {path}')
+
+# Search the projects source code.
+# Search for assignments to celsius in the code files.
+external_symbols = set() # Find all words used in the projects source code.
+temperatures = set() # Find all assignments to celsius.
+word_regex = re.compile(br'\b\w+\b')
+float_regex = br'[+-]?((\d+\.?\d*)|(\.\d+))\b([Ee][+-]?\d+)?\b'
+celsius_regex = re.compile(br'\bcelsius\s*=\s*' + float_regex)
+for path in code_files:
     with open(path, 'rb') as f:
         text = f.read()
     for match in re.finditer(word_regex, text):
@@ -91,8 +97,22 @@ for path in code_files:
             external_symbols.add(match.group().decode())
         except UnicodeDecodeError:
             pass
+    for match in re.finditer(celsius_regex, text):
+        temperatures.add(float(match.group().decode().partition('=')[2]))
 
-# TODO: Search for assignments to celsius in the code files. Use regex.
+if "celsius" not in external_symbols:
+    celsius = 6.3
+    print(f'Default temperature: celsius = {celsius}')
+elif len(temperatures) == 1:
+    celsius = temperatures.pop()
+    print(f'Detected temperature: celsius = {celsius}')
+elif len(temperatures) > 1:
+    celsius = None
+    print(f'Detected multiple temperatures:', ', '.join(str(x) for x in temperatures))
+else:
+    celsius = None
+    print(f'Detected temperature but could not read it')
+
 
 # Process the NMODL files.
 for path in nmodl_files:
@@ -100,7 +120,7 @@ for path in nmodl_files:
         copy_files.append(path)
         continue
     output_file = output_dir.joinpath(f'_opt_{path.name}')
-    okay = optimize_nmodl.optimize_nmodl(path, output_file, external_symbols, args.celsius)
+    okay = optimize_nmodl.optimize_nmodl(path, output_file, external_symbols, celsius)
     if not okay:
         copy_files.append(path)
 

@@ -337,13 +337,6 @@ def optimize_nmodl(input_file, output_file, external_symbols, celsius=None) -> b
             body  = re.sub(rf'\b{name}\b', value, body)
         block.text = declaration + brace + body
 
-    # Check the temperature in the INITIAL block.
-    if 'celsius' in parameters:
-        if block := blocks.get('INITIAL', None):
-            signature, start, body = block.text.partition('{')
-            check_temp = f"\n    VERBATIM\n    assert(celsius == {parameters['celsius'][0]});\n    ENDVERBATIM\n"
-            block.text = signature + start + check_temp + body
-
     # Insert new LOCAL statements to replace the removed assigned variables.
     new_locals = {} # Maps from block name to set of names of new local variables.
     if assigned_const_value:
