@@ -45,8 +45,13 @@ def optimize_nmodl(input_file, output_file, external_symbols, celsius=None) -> b
         print_verbose("warning: could not parse and build symbol table")
         return False
 
-    # nmodl.ast.view(AST)             # Useful for debugging.
-    # print(AST.get_symbol_table())   # Useful for debugging.
+
+
+    # Useful for debugging.
+    # nmodl.ast.view(AST)
+    # print_verbose(AST.get_symbol_table())
+
+
 
     # Check for INCLUDE statements. It is unreasonable to find the included file.
     # The file is located in one of the following places (searched in this order):
@@ -106,6 +111,7 @@ def optimize_nmodl(input_file, output_file, external_symbols, celsius=None) -> b
     electrode_cur_vars  = get_vars_with_prop(sym_type.electrode_cur_var)
     range_vars          = get_vars_with_prop(sym_type.range_var)
     global_vars         = get_vars_with_prop(sym_type.global_var)
+    constant_vars       = get_vars_with_prop(sym_type.constant_var)
     parameter_vars      = get_vars_with_prop(sym_type.param_assign)
     assigned_vars       = get_vars_with_prop(sym_type.assigned_definition)
     state_vars          = get_vars_with_prop(sym_type.state_var)
@@ -155,13 +161,18 @@ def optimize_nmodl(input_file, output_file, external_symbols, celsius=None) -> b
 
     # Inline the parameters.
     parameters = {}
-    for name in (parameter_vars - external_vars - rw.all_writes - parameter_name_conflicts):
+    for name in ((parameter_vars|constant_vars) - external_vars - rw.all_writes - parameter_name_conflicts):
         for node in sym_table.lookup(name).get_nodes():
-            if node.is_param_assign() and node.value is not None:
+            if node.value is not None:
                 value = float(STR(node.value))
                 units = ('('+STR(node.unit.name)+')') if node.unit else ''
                 parameters[name] = (value, units)
-                print_verbose(f'inline PARAMETER: {name} = {value} {units}')
+                if node.is_param_assign():
+                    print_verbose(f'inline PARAMETER: {name} = {value} {units}')
+                elif node.is_constant_var():
+                    print_verbose(f'inline CONSTANT: {name} = {value} {units}')
+                else:
+                    raise RuntimeError(type(node))
 
     # Inline celsius if it's given and if this nmodl file uses it.
     if celsius is not None and 'celsius' in parameter_vars:
@@ -299,6 +310,7 @@ def optimize_nmodl(input_file, output_file, external_symbols, celsius=None) -> b
         if block.node.is_unit_block(): continue
         if block.node.is_unit_state(): continue
         if block.node.is_param_block(): continue
+        if block.node.is_constant_block(): continue
         if block.node.is_state_block(): continue
         if block.node.is_assigned_block(): continue
         if block.node.is_local_list_statement(): continue
