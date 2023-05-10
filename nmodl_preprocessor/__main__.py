@@ -92,6 +92,10 @@ celsius_regex = re.compile(br'\bcelsius\s*=\s*' + float_regex)
 for path in code_files:
     with open(path, 'rb') as f:
         text = f.read()
+    if path.suffix in {'.hoc', '.ses'}:
+        text = re.sub(br'//.*', b'', text)
+    if path.suffix == '.py':
+        text = re.sub(br'#.*', b'', text)
     for match in re.finditer(word_regex, text):
         try:
             external_symbols.add(match.group().decode())
