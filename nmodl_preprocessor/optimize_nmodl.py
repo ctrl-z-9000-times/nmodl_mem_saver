@@ -156,6 +156,10 @@ def optimize_nmodl(input_file, output_file, external_symbols, celsius=None) -> b
     # Split the document into its top-level blocks for easier manipulation.
     blocks_list = [SimpleNamespace(node=x, text=nmodl.to_nmodl(x)) for x in AST.blocks]
     blocks      = {get_block_name(x.node): x for x in blocks_list}
+    # 
+    if block := blocks.get('NET_RECEIVE', None):
+        for x in visitor.lookup(block.node, ANT.INITIAL_BLOCK):
+            blocks['NET_RECEIVE INITIAL'] = SimpleNamespace(node=x, text=nmodl.to_nmodl(x))
 
     # Inline the parameters.
     parameters = {}
@@ -322,7 +326,7 @@ def optimize_nmodl(input_file, output_file, external_symbols, celsius=None) -> b
         else:
             return f'TABLE {table_vars} FROM'
     # Search for the blocks which contain code.
-    for block in blocks_list:
+    for block in blocks.values():
         if block.node.is_model(): continue
         if block.node.is_block_comment(): continue
         if block.node.is_neuron_block(): continue
@@ -358,18 +362,34 @@ def optimize_nmodl(input_file, output_file, external_symbols, celsius=None) -> b
 
     # Insert new LOCAL statements to replace the removed assigned variables.
     new_locals = {} # Maps from block name to set of names of new local variables.
-    if assigned_const_value:
-        new_locals['INITIAL'] = set(assigned_const_value.keys())
+    new_locals['INITIAL'] = set(assigned_const_value.keys())
     for block_name, write_variables in rw.writes.items():
-        if converted_variables := assigned_to_local & write_variables:
-            new_locals.setdefault(block_name, set()).update(converted_variables)
+        new_locals.setdefault(block_name, set()).update(assigned_to_local & write_variables)
     # 
     for block_name, local_names in new_locals.items():
         block = blocks[block_name]
+        if not local_names:
+            continue
         signature, start, body = block.text.partition('{')
-        names = ', '.join(sorted(local_names))
+        local_names = ', '.join(sorted(local_names)) # Format the local variables for printing.
         body  = textwrap.indent(body, '    ')
-        block.text = signature + '{\n    LOCAL ' + names + '\n    {' + body + '\n}'
+        block.text = signature + '{\n    LOCAL ' + local_names + '\n    {' + body + '\n}'
+
+    # Special case for initial block inside of net receive.
+    if initial_block := blocks.get('NET_RECEIVE INITIAL', None):
+        block = blocks['NET_RECEIVE']
+        before, keyword, after = block.text.partition('INITIAL')
+        # Discard the next block of statements.
+        depth = 0
+        for match in re.finditer(r'{|}', after):
+            if match.group() == '{':
+                depth += 1
+            elif match.group() == '}':
+                depth -= 1
+                if depth == 0:
+                    break
+        assert (depth == 0) and (match.group() == '}')
+        block.text = before + initial_block.text + after[match.end():]
 
     # Find any local statements in the top level scope and move them to the top
     # of the file. Local variables must be declared before they're used, and

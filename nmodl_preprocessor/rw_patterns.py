@@ -29,6 +29,17 @@ class RW_Visitor(nmodl.dsl.visitor.AstVisitor):
         else:
             node.visit_children(self)
 
+    def visit_initial_block(self, node):
+        # Special case for initial blocks hiding inside of net receive blocks.
+        if self.current_block == 'NET_RECEIVE':
+            self.current_block = 'NET_RECEIVE INITIAL'
+            self.reads[self.current_block]  = set()
+            self.writes[self.current_block] = set()
+            node.visit_children(self)
+            self.current_block = 'NET_RECEIVE'
+        else:
+            node.visit_children(self)
+
     def visit_reaction_statement(self, node):
         self.visit_diff_eq_expression(node)
 
