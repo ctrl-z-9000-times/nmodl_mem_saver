@@ -18,7 +18,7 @@ from nmodl_preprocessor import nmodl_to_python
 # caused by auto-generated initial values.
 parameter_name_conflicts = {'y0', 'j0'}
 
-def optimize_nmodl(input_file, output_file, external_symbols, celsius=None) -> bool:
+def optimize_nmodl(input_file, output_file, external_refs, celsius=None) -> bool:
     # 
     def print_verbose(*strings, **kwargs):
         print(input_file.name+':', *strings, **kwargs, file=stderr)
@@ -94,9 +94,8 @@ def optimize_nmodl(input_file, output_file, external_symbols, celsius=None) -> b
         nmodl.symtab.SymtabVisitor().visit_program(AST)
 
     # Find all external references to this mechanism.
-    external_refs  = set()
     suffix = '_' + STR(next(iter(lookup(ANT.SUFFIX))).get_node_name())
-    for x in external_symbols:
+    for x in list(external_refs):
         if x.endswith(suffix):
             external_refs.add(x[:-len(suffix)])
 
