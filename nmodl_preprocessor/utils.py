@@ -3,6 +3,10 @@ STR = lambda x: str(x).strip() # nmodl sometimes leaves trailing whitespace on s
 def get_block_name(node):
     if node.is_ba_block():
         return get_block_name(node.parent)
+    if node.is_before_block():
+        return 'BEFORE ' + STR(node.bablock.type)
+    if node.is_after_block():
+        return 'AFTER ' + STR(node.bablock.type)
     if name := getattr(node, 'name', None):
         return STR(name)
     try:

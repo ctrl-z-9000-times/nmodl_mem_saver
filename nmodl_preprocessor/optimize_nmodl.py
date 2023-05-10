@@ -139,8 +139,6 @@ def optimize_nmodl(input_file, output_file, external_symbols, celsius=None) -> b
             write_ion_vars |
             nonspecific_vars |
             electrode_cur_vars |
-            range_vars |
-            global_vars |
             state_vars |
             pointer_vars |
             functions |
@@ -161,9 +159,11 @@ def optimize_nmodl(input_file, output_file, external_symbols, celsius=None) -> b
 
     # Inline the parameters.
     parameters = {}
-    for name in ((parameter_vars|constant_vars) - external_vars - rw.all_writes - parameter_name_conflicts):
+    parameter_candidates  = (constant_vars - verbatim_vars) # Can not inline into VERBATIM blocks.
+    parameter_candidates |= (parameter_vars - external_vars - rw.all_writes - parameter_name_conflicts)
+    for name in parameter_candidates:
         for node in sym_table.lookup(name).get_nodes():
-            if node.value is not None:
+            if (node.is_param_assign() or node.is_constant_var()) and node.value is not None:
                 value = float(STR(node.value))
                 units = ('('+STR(node.unit.name)+')') if node.unit else ''
                 parameters[name] = (value, units)
@@ -248,6 +248,25 @@ def optimize_nmodl(input_file, output_file, external_symbols, celsius=None) -> b
         print_verbose(f'convert from ASSIGNED to LOCAL: {name}')
 
     ############################################################################
+
+    # Rewrite the NEURON block without the removed variables.
+    if block := blocks.get('NEURON', None):
+        new_block = "NEURON {\n"
+        for stmt in block.node.statement_block.statements:
+            if stmt.is_global() or stmt.is_range():
+                variables = [x.get_node_name() for x in stmt.variables]
+                variables = [x for x in variables if x not in parameters]
+                variables = [x for x in variables if x not in assigned_to_local]
+                variables = [x for x in variables if x not in assigned_const_value]
+                if not variables:
+                    continue
+                if   stmt.is_global(): new_block += '    GLOBAL '
+                elif stmt.is_range():  new_block += '    RANGE '
+                new_block += ', '.join(variables) + '\n'
+            else:
+                new_block += '    ' + nmodl.to_nmodl(stmt) + '\n'
+        new_block += "}\n"
+        block.text = new_block
 
     # Regenerate the PARAMETER block without the inlined parameters.
     if block := blocks.get('PARAMETER', None):

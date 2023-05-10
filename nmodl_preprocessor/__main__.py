@@ -47,19 +47,12 @@ if args.model_dir:
     model_dir = Path(args.model_dir).resolve()
     assert model_dir.exists(), f'directory not found: "{model_dir}"'
     nmodl_files = sorted(model_dir.glob('*.mod'))
+# Recursively search for the model directory.
+elif nmodl_files := sorted(project_dir.glob('**/*.mod')):
+    model_dir   = min((path.parent for path in nmodl_files), key=lambda path: len(path.parts))
+    nmodl_files = sorted(model_dir.glob('*.mod'))
 else:
-    # Recursively search for the model directory.
-    stack = [project_dir]
-    while path := stack.pop():
-        model_dir = path
-        if nmodl_files := sorted(model_dir.glob('*.mod')):
-            break # Stop searching after finding the model directory.
-        else:
-            for x in path.iterdir():
-                if x.is_dir():
-                    stack.push(x)
-    else:
-        model_dir = None
+    model_dir = None
 
 # Copy any C/C++ files that might have been included into the mechanisms.
 copy_files = []
@@ -81,6 +74,9 @@ for path in nmodl_files:
 
 for path in code_files:
     print(f'Source Code: {path}')
+
+for path in copy_files:
+    print(f'Include C/C++: {path}')
 
 # Search the projects source code.
 # Search for assignments to celsius in the code files.
