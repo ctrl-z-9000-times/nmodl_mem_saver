@@ -1,7 +1,9 @@
 from sys import stderr
 from types import SimpleNamespace
+from pathlib import Path
 import math
 import re
+import shutil
 import textwrap
 
 import nmodl.ast
@@ -22,28 +24,54 @@ def optimize_nmodl(input_file, output_file, external_refs, other_nmodl_refs, cel
     # 
     def print(*strings, **kwargs):
         __builtins__['print'](input_file.name+':', *strings, **kwargs)
-    # First read the file as binary and discard as much of it as possible.
+
+    # First read the file as binary and discard as much of it as possible, in
+    # case it contains invalid utf-8.
     with open(input_file, 'rb') as f:
         nmodl_text = f.read()
 
-    # Remove comments in case contain invalid utf-8 text.
-    nmodl_text = re.sub(rb'(?s)\bCOMMENT\b.*?\bENDCOMMENT\b', b'', nmodl_text)
+    def clean_nmodl(nmodl_text):
+        # Remove comments.
+        nmodl_text = re.sub(rb'(?s)\bCOMMENT\b.*?\bENDCOMMENT\b', b'', nmodl_text)
+        # Remove INDEPENDENT statements because they're unnecessary and the nmodl library does not like them.
+        nmodl_text = re.sub(rb'\bINDEPENDENT\b\s*{[^{}]*}', b'', nmodl_text)
+        return nmodl_text
 
-    # Remove INDEPENDENT statements because they're unnecessary and the nmodl library does not like them.
-    nmodl_text = re.sub(rb'\bINDEPENDENT\b\s*{[^{}]*}', b'', nmodl_text)
+    nmodl_text = clean_nmodl(nmodl_text)
+
+    # Substitute INCLUDE statements with the file that they point to.
+    include_regex = re.compile(br'\bINCLUDE\s*"(.*)"')
+    def include_file(match):
+        file = match.groups()[0].decode()
+        # TODO: This is supposed to search the environment variable "MODL_INCLUDES".
+        for path in (Path.cwd(), input_file.parent,):
+            include_file = path.joinpath(file)
+            if include_file.exists():
+                with open(include_file, 'rb') as f:
+                    return f.read()
+        raise ValueError(f'file not found {file}')
+    nmodl_text = re.sub(include_regex, include_file, nmodl_text)
+
+    nmodl_text = clean_nmodl(nmodl_text)
+    nmodl_text = nmodl_text.decode()
 
     # Parse the nmodl file into an AST.
-    nmodl_text = nmodl_text.decode()
     try:
         AST = nmodl.NmodlDriver().parse_string(nmodl_text)
     except RuntimeError as error:
         print("warning: could not parse file:", str(error))
-        return False
+        shutil.copy(input_file, output_file)
+        return
     try:
         nmodl.symtab.SymtabVisitor().visit_program(AST)
     except RuntimeError as error:
         print("warning: could not build symbol table:", str(error))
-        return False
+        shutil.copy(input_file, output_file)
+        return
+
+    visitor = nmodl.dsl.visitor.AstLookupVisitor()
+    lookup  = lambda ast_node_type: visitor.lookup(AST, ast_node_type)
+    includes = list(lookup(ANT.INCLUDE))
 
 
 
@@ -52,19 +80,6 @@ def optimize_nmodl(input_file, output_file, external_refs, other_nmodl_refs, cel
     # print(AST.get_symbol_table())
 
 
-
-    # Check for INCLUDE statements. It is unreasonable to find the included file.
-    # The file is located in one of the following places (searched in this order):
-    #     1) The current working directory,
-    #     2) The directory of this nmodl file,
-    #     3) The directories specified by the "MODL_INCLUDES" environment variable.
-    # INCLUDE statements prevent all optimizations because they all rely on
-    # having the complete NMODL source code.
-    visitor = nmodl.dsl.visitor.AstLookupVisitor()
-    lookup  = lambda ast_node_type: visitor.lookup(AST, ast_node_type)
-    if lookup(ANT.INCLUDE):
-        print('warning: INCLUDE prevent optimization')
-        return False
 
     # Find all symbols that are referenced in VERBATIM blocks.
     verbatim_vars = set()
@@ -75,9 +90,10 @@ def optimize_nmodl(input_file, output_file, external_refs, other_nmodl_refs, cel
         for symbol in re.finditer(r'[a-zA-Z]\w*', verbatim_text):
             verbatim_vars.add(symbol.group())
     verbatim_vars -= cpp_keywords
-    if verbatim_length / len(nmodl_text) > .90:
+    if verbatim_length / len(nmodl_text) > .50:
         print('warning: too much VERBATIM, will not optimize')
-        return False
+        shutil.copy(input_file, output_file)
+        return
     # Let's get this warning out of the way. As chunks of arbitrary C/C++ code,
     # VERBATIM blocks can not be analysed. Assume that all symbols in VERBATIM
     # blocks are publicly visible and are both read from and written to.
@@ -425,5 +441,4 @@ def optimize_nmodl(input_file, output_file, external_refs, other_nmodl_refs, cel
 
     with output_file.open('w') as f:
         f.write(nmodl_text)
-    return True
 

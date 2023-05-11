@@ -25,17 +25,6 @@ parser.add_argument('output_dir', type=str,
 
 args = parser.parse_args()
 
-# Setup the output directory.
-output_dir = Path(args.output_dir).resolve()
-if not output_dir.exists():
-    assert output_dir.parent.is_dir(), f'directory not found: {output_dir.parent}'
-    output_dir.mkdir()
-else:
-    assert output_dir.is_dir(), "output_dir is not a directory"
-    # Delete any existing mod files.
-    for x in output_dir.glob('*.mod'):
-        x.unlink()
-
 
 # 
 project_dir = Path(args.project_dir).resolve()
@@ -54,6 +43,18 @@ elif nmodl_files := sorted(project_dir.glob('**/*.mod')):
 else:
     model_dir = None
 
+# Setup the output directory.
+output_dir = Path(args.output_dir).resolve()
+if not output_dir.exists():
+    assert output_dir.parent.is_dir(), f'directory not found: {output_dir.parent}'
+    output_dir.mkdir()
+else:
+    assert output_dir.is_dir(), "output_dir is not a directory"
+    assert output_dir != model_dir, "operation would overwrite its inputs"
+    # Delete any existing mod files.
+    for x in output_dir.glob('*.mod'):
+        x.unlink()
+
 # Copy any C/C++ files that might have been included into the mechanisms.
 include_files = []
 if model_dir:
@@ -61,7 +62,8 @@ if model_dir:
             sorted(model_dir.glob('*.c')) +
             sorted(model_dir.glob('*.h')) +
             sorted(model_dir.glob('*.cpp')) +
-            sorted(model_dir.glob('*.hpp')))
+            sorted(model_dir.glob('*.hpp')) +
+            sorted(model_dir.glob('*.inc')) )
 
 # 
 hoc_files  = sorted(project_dir.glob("**/*.hoc"))
@@ -72,25 +74,29 @@ code_files = hoc_files + ses_files + py_files
 for path in nmodl_files:
     print(f'Mechanism: {path}')
 
+for path in include_files:
+    print(f'Include: {path}')
+
 for path in code_files:
     print(f'Source Code: {path}')
 
-for path in include_files:
-    print(f'Include C/C++: {path}')
-
 # Search the projects source code.
 references = {} # The set of words used in each projects file.
-temperatures = set() # Find all assignments to celsius.
 word_regex = re.compile(br'\b\w+\b')
+temperatures = set() # Find all assignments to celsius.
 float_regex = br'[+-]?((\d+\.?\d*)|(\.\d+))\b([Ee][+-]?\d+)?\b'
 celsius_regex = re.compile(br'\bcelsius\s*=\s*' + float_regex)
-for path in nmodl_files + code_files + include_files:
+for path in (nmodl_files + code_files + include_files):
     with open(path, 'rb') as f:
         text = f.read()
-    if path.suffix in {'.hoc', '.ses'}:
+    # Remove line comments.
+    if path.suffix in {'.hoc', '.ses', '.h', '.c', '.hpp', '.cpp'}:
         text = re.sub(br'//.*', b'', text)
-    if path.suffix == '.py':
+    if path.suffix in {'.py'}:
         text = re.sub(br'#.*', b'', text)
+    if path.suffix in {'.mod', '.inc'}:
+        text = re.sub(br':.*', b'', text)
+    # 
     words = set()
     for match in re.finditer(word_regex, text):
         try:
@@ -99,14 +105,14 @@ for path in nmodl_files + code_files + include_files:
             pass
     references[path] = words
     # Search for assignments to celsius in the code files.
-    for match in re.finditer(celsius_regex, text):
-        temperatures.add(float(match.group().decode().partition('=')[2]))
+    if path.suffix in {'.hoc', '.ses', '.py'}:
+        for match in re.finditer(celsius_regex, text):
+            temperatures.add(float(match.group().decode().partition('=')[2]))
 
 # 
 external_symbols = set()
-for path, words in references.items():
-    if path in code_files:
-        external_symbols.update(words)
+for path in (code_files + include_files):
+    external_symbols.update(references[path])
 
 if "celsius" not in external_symbols:
     celsius = 6.3
@@ -121,26 +127,24 @@ else:
     celsius = None
     print(f'Detected temperature but could not read it')
 
+# Copy any C/C++ files that might have been included.
+for path in include_files:
+    shutil.copy(path, output_dir.joinpath(path.name))
 
 # Process the NMODL files.
 for path in nmodl_files:
-    if path.name == 'vecst.mod':
+    if path.name in {'vecst.mod', 'stats.mod'}:
         include_files.append(path)
         continue
     # 
     other_nmodl_refs = set()
-    for other_nmodl_file in nmodl_files:
-        if path != other_nmodl_file:
-            other_nmodl_refs.update(references[other_nmodl_file])
+    for other_nmodl_file in (nmodl_files + include_files):
+        if other_nmodl_file.suffix in {'.mod', '.inc'}:
+            if path != other_nmodl_file:
+                other_nmodl_refs.update(references[other_nmodl_file])
     # 
     output_file = output_dir.joinpath(f'_opt_{path.name}')
-    okay = optimize_nmodl.optimize_nmodl(path, output_file, external_symbols, other_nmodl_refs, celsius)
-    if not okay:
-        include_files.append(path)
-
-# Copy any C/C++ files that might have been included.
-for path in include_files:
-    shutil.copy(path, output_dir.joinpath(path.name))
+    optimize_nmodl.optimize_nmodl(path, output_file, external_symbols, other_nmodl_refs, celsius)
 
 _placeholder = lambda: None # Symbol for the CLI script to import and call.
 
