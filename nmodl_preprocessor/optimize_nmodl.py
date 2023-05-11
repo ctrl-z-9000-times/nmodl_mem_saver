@@ -68,10 +68,16 @@ def optimize_nmodl(input_file, output_file, external_refs, celsius=None) -> bool
 
     # Find all symbols that are referenced in VERBATIM blocks.
     verbatim_vars = set()
+    verbatim_length = 0
     for stmt in lookup(ANT.VERBATIM):
-        for symbol in re.finditer(r'\b\w+\b', nmodl.to_nmodl(stmt)):
+        verbatim_text = nmodl.to_nmodl(stmt)
+        verbatim_length += len(verbatim_text)
+        for symbol in re.finditer(r'[a-zA-Z]\w*', verbatim_text):
             verbatim_vars.add(symbol.group())
     verbatim_vars -= cpp_keywords
+    if verbatim_length / len(nmodl_text) > .90:
+        print_verbose('too much VERBATIM, will not optimize')
+        return False
     # Let's get this warning out of the way. As chunks of arbitrary C/C++ code,
     # VERBATIM blocks can not be analysed. Assume that all symbols in VERBATIM
     # blocks are publicly visible and are both read from and written to.
@@ -221,7 +227,7 @@ def optimize_nmodl(input_file, output_file, external_refs, celsius=None) -> bool
                 print_exception(error)
                 print_verbose("warning: could not execute INITIAL block:\n" + pycode)
                 initial_scope = {}
-        # Find all of the variables which are written to durring the runtime.
+        # Find all of the variables which are written to during the runtime.
         # These variables obviously do not have a constant value.
         runtime_writes_to = set()
         for block_name, variables in rw.writes.items():
