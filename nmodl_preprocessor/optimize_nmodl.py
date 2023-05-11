@@ -135,11 +135,8 @@ def optimize_nmodl(input_file, output_file, external_refs, other_nmodl_refs, cel
     array_vars = {}
     for x in sym_table.get_variables_with_properties(sym_type.assigned_definition):
         for decl in x.get_nodes():
-            decl = STR(decl)
-            if '[' in decl:
-                name = STR(x.get_name())
-                size = STR(decl.split('[')[1].strip(']'))
-                array_vars[name] = size
+            if length := getattr(decl, 'length', None):
+                array_vars[STR(x.get_name())] = nmodl.to_nmodl(length)
     # Find all symbols which are provided by or are visible to the larger NEURON simulation.
     external_vars = (
             neuron_vars |
