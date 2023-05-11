@@ -89,9 +89,13 @@ class RW_Visitor(nmodl.dsl.visitor.AstVisitor):
             self.reads[self.current_block].update(inner.reads[self.current_block])
             self.writes[self.current_block].update(inner.writes[self.current_block])
 
-    # TODO: For example see model 52034
-    # def visit_from_statement(self, node):
-    #     1/0
+    def visit_from_statement(self, node):
+        name = STR(node.name.get_node_name())
+        self.writes[self.current_block].add(name)
+        if x := getattr(node, 'from'):            x.accept(self)
+        if x := getattr(node, 'to'):              x.accept(self)
+        if x := getattr(node, 'increment', None): x.accept(self)
+        node.statement_block.accept(self)
 
     def visit_neuron_block(self, node):
         pass # Does not contain any source code.

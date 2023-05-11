@@ -168,9 +168,7 @@ def optimize_nmodl(input_file, output_file, external_refs, celsius=None) -> bool
 
     # Inline the parameters.
     parameters = {}
-    parameter_candidates  = (constant_vars - verbatim_vars) # Can not inline into VERBATIM blocks.
-    parameter_candidates |= (parameter_vars - external_vars - rw.all_writes - parameter_name_conflicts)
-    for name in parameter_candidates:
+    for name in ((parameter_vars | constant_vars) - external_vars - rw.all_writes - parameter_name_conflicts):
         for node in sym_table.lookup(name).get_nodes():
             if (node.is_param_assign() or node.is_constant_var()) and node.value is not None:
                 value = float(STR(node.value))
@@ -301,13 +299,33 @@ def optimize_nmodl(input_file, output_file, external_refs, celsius=None) -> bool
                 new_lines.append(stmt_nmodl)
         block.text = 'ASSIGNED {\n' + '\n'.join('    ' + x for x in new_lines) + '\n}'
 
+    # Insert new LOCAL statements to replace the removed assigned variables.
+    new_locals = {} # Maps from block name to set of names of new local variables.
+    new_locals['INITIAL'] = set(assigned_const_value.keys())
+    for block_name, write_variables in rw.writes.items():
+        new_locals.setdefault(block_name, set()).update(assigned_to_local & write_variables)
+    # 
+    for block_name, local_names in new_locals.items():
+        local_names = sorted(local_names)
+        if not local_names:
+            continue
+        block = blocks[block_name]
+        signature, start, body = block.text.partition('{')
+        body = textwrap.indent(body, '    ')
+        # Format the local variables for printing.
+        for idx, name in enumerate(sorted(local_names)):
+            if array_size := array_vars.get(name, None):
+                local_names[i] = name + '[' + array_size + ']'
+        local_names = ', '.join(local_names)
+        block.text = signature + '{\n    LOCAL ' + local_names + '\n    {' + body + '\n}'
+
     # Substitute the parameters with their values.
     substitutions = dict(parameters)
     substitutions.update(assigned_const_value)
     # Delete any references to the substituted symbols out of TABLE statements.
     # First setup a regex to find the TABLE statements.
     list_regex  = r'\w+(\s*,\s*\w+)*'
-    table_regex = rf'\bTABLE\s+(?P<table_vars>{list_regex}\s+)?(DEPEND\s+(?P<depend_vars>{list_regex})\s+)?FROM\b'
+    table_regex = rf'\bTABLE\s+(?P<table_vars>{list_regex}\s+)?(DEPEND\s+(?P<depend_vars>{list_regex})\s+)?FROM\b(?P<tail>.*)'
     table_regex = re.compile(table_regex)
     def rewrite_table_stmt(match):
         match = match.groupdict()
@@ -326,10 +344,11 @@ def optimize_nmodl(input_file, output_file, external_refs, celsius=None) -> bool
         # Rewrite the TABLE statement using the new lists of variables.
         table_vars  = match['table_vars']
         depend_vars = match['depend_vars']
-        if depend_vars:
-            return f'TABLE {table_vars} DEPEND {depend_vars} FROM'
-        else:
-            return f'TABLE {table_vars} FROM'
+        if table_vars:
+            if depend_vars:
+                return f'TABLE {table_vars} DEPEND {depend_vars} FROM' + match['tail']
+            else:
+                return f'TABLE {table_vars} FROM' + match['tail']
     # Search for the blocks which contain code.
     for block in blocks.values():
         if block.node.is_model(): continue
@@ -364,21 +383,6 @@ def optimize_nmodl(input_file, output_file, external_refs, celsius=None) -> bool
             value = str(value) + units
             body  = re.sub(rf'\b{name}\b', value, body)
         block.text = declaration + brace + body
-
-    # Insert new LOCAL statements to replace the removed assigned variables.
-    new_locals = {} # Maps from block name to set of names of new local variables.
-    new_locals['INITIAL'] = set(assigned_const_value.keys())
-    for block_name, write_variables in rw.writes.items():
-        new_locals.setdefault(block_name, set()).update(assigned_to_local & write_variables)
-    # 
-    for block_name, local_names in new_locals.items():
-        block = blocks[block_name]
-        if not local_names:
-            continue
-        signature, start, body = block.text.partition('{')
-        local_names = ', '.join(sorted(local_names)) # Format the local variables for printing.
-        body  = textwrap.indent(body, '    ')
-        block.text = signature + '{\n    LOCAL ' + local_names + '\n    {' + body + '\n}'
 
     # Special case for initial block inside of net receive.
     if initial_block := blocks.get('NET_RECEIVE INITIAL', None):
