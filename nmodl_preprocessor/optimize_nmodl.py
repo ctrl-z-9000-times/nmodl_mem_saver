@@ -131,12 +131,15 @@ def optimize_nmodl(input_file, output_file, external_refs, celsius=None) -> bool
     for d in lookup(ANT.LON_DIFUSE):
         diffusion_vars.update(STR(x.get_node_name()) for x in d.names)
     state_vars = state_vars | reaction_vars | compartment_vars | diffusion_vars
-    # Check for array variables and ignore them. They should have already been
-    # unrolled into individual variables by now.
+    # Find all array variables.
+    array_vars = {}
     for x in sym_table.get_variables_with_properties(sym_type.assigned_definition):
-        node = x.get_node()
-        if '[' in str(node):
-            assigned_vars.discard(STR(x.get_name()))
+        for decl in x.get_nodes():
+            decl = STR(decl)
+            if '[' in decl:
+                name = STR(x.get_name())
+                size = STR(decl.split('[')[1].strip(']'))
+                array_vars[name] = size
     # Find all symbols which are provided by or are visible to the larger NEURON simulation.
     external_vars = (
             neuron_vars |
@@ -315,7 +318,7 @@ def optimize_nmodl(input_file, output_file, external_refs, celsius=None) -> bool
         # Format the local variables for printing.
         for idx, name in enumerate(sorted(local_names)):
             if array_size := array_vars.get(name, None):
-                local_names[i] = name + '[' + array_size + ']'
+                local_names[idx] = name + '[' + array_size + ']'
         local_names = ', '.join(local_names)
         block.text = signature + '{\n    LOCAL ' + local_names + '\n    {' + body + '\n}'
 
