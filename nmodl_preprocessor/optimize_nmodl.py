@@ -18,14 +18,11 @@ from nmodl_preprocessor import nmodl_to_python
 # caused by auto-generated initial values.
 parameter_name_conflicts = {'y0', 'j0'}
 
-def optimize_nmodl(input_file, output_file, external_refs, celsius=None) -> bool:
+def optimize_nmodl(input_file, output_file, external_refs, other_nmodl_refs, celsius=None) -> bool:
     # 
-    def print_verbose(*strings, **kwargs):
-        print(input_file.name+':', *strings, **kwargs, file=stderr)
-    def print_exception(exception):
-        print_verbose(f"{type(exception).__name__}: {str(exception)}")
+    def print(*strings, **kwargs):
+        __builtins__['print'](input_file.name+':', *strings, **kwargs)
     # First read the file as binary and discard as much of it as possible.
-    print_verbose(f'read file: "{input_file}"')
     with open(input_file, 'rb') as f:
         nmodl_text = f.read()
 
@@ -39,17 +36,20 @@ def optimize_nmodl(input_file, output_file, external_refs, celsius=None) -> bool
     nmodl_text = nmodl_text.decode()
     try:
         AST = nmodl.NmodlDriver().parse_string(nmodl_text)
+    except RuntimeError as error:
+        print("warning: could not parse file:", str(error))
+        return False
+    try:
         nmodl.symtab.SymtabVisitor().visit_program(AST)
     except RuntimeError as error:
-        print_exception(error)
-        print_verbose("warning: could not parse and build symbol table")
+        print("warning: could not build symbol table:", str(error))
         return False
 
 
 
     # Useful for debugging.
     # nmodl.ast.view(AST)
-    # print_verbose(AST.get_symbol_table())
+    # print(AST.get_symbol_table())
 
 
 
@@ -63,7 +63,7 @@ def optimize_nmodl(input_file, output_file, external_refs, celsius=None) -> bool
     visitor = nmodl.dsl.visitor.AstLookupVisitor()
     lookup  = lambda ast_node_type: visitor.lookup(AST, ast_node_type)
     if lookup(ANT.INCLUDE):
-        print_verbose('warning: INCLUDE prevent optimization')
+        print('warning: INCLUDE prevent optimization')
         return False
 
     # Find all symbols that are referenced in VERBATIM blocks.
@@ -76,22 +76,21 @@ def optimize_nmodl(input_file, output_file, external_refs, celsius=None) -> bool
             verbatim_vars.add(symbol.group())
     verbatim_vars -= cpp_keywords
     if verbatim_length / len(nmodl_text) > .90:
-        print_verbose('too much VERBATIM, will not optimize')
+        print('warning: too much VERBATIM, will not optimize')
         return False
     # Let's get this warning out of the way. As chunks of arbitrary C/C++ code,
     # VERBATIM blocks can not be analysed. Assume that all symbols in VERBATIM
     # blocks are publicly visible and are both read from and written to.
     # Do not attempt to alter the source code inside of VERBATIM blocks.
     if verbatim_vars:
-        print_verbose('warning: VERBATIM may prevent optimization')
+        print('warning: VERBATIM may prevent optimization')
 
     # Inline all of the functions and procedures
     if not verbatim_vars: # The NMODL library fails to correctly analyze VERBATIM blocks.
         try:
             nmodl.dsl.visitor.InlineVisitor().visit_program(AST)
         except RuntimeError as error:
-            print_exception(error)
-            print_verbose("warning: could not inline all functions and procedures")
+            print("warning: could not inline all functions and procedures:", str(error))
         else:
             nmodl_text = nmodl.to_nmodl(AST)
         # Reload the modified AST so that the NMODL library starts from a clean state.
@@ -101,7 +100,8 @@ def optimize_nmodl(input_file, output_file, external_refs, celsius=None) -> bool
 
     # Find all external references to this mechanism.
     suffix = '_' + STR(next(iter(lookup(ANT.SUFFIX))).get_node_name())
-    for x in list(external_refs):
+    external_refs = set(external_refs) # Will mutate, don't alter the original version.
+    for x in list(external_refs) + list(other_nmodl_refs):
         if x.endswith(suffix):
             external_refs.add(x[:-len(suffix)])
 
@@ -169,6 +169,12 @@ def optimize_nmodl(input_file, output_file, external_refs, celsius=None) -> bool
         for x in visitor.lookup(block.node, ANT.INITIAL_BLOCK):
             blocks['NET_RECEIVE INITIAL'] = SimpleNamespace(node=x, text=nmodl.to_nmodl(x))
 
+
+
+    ############################################################################
+    # Determine what to optimize.
+
+
     # Inline the parameters.
     parameters = {}
     for name in ((parameter_vars | constant_vars) - external_vars - rw.all_writes - parameter_name_conflicts):
@@ -178,9 +184,9 @@ def optimize_nmodl(input_file, output_file, external_refs, celsius=None) -> bool
                 units = ('('+STR(node.unit.name)+')') if node.unit else ''
                 parameters[name] = (value, units)
                 if node.is_param_assign():
-                    print_verbose(f'inline PARAMETER: {name} = {value} {units}')
+                    print(f'inline PARAMETER: {name} = {value} {units}')
                 elif node.is_constant_var():
-                    print_verbose(f'inline CONSTANT: {name} = {value} {units}')
+                    print(f'inline CONSTANT: {name} = {value} {units}')
                 else:
                     raise RuntimeError(type(node))
 
@@ -191,7 +197,7 @@ def optimize_nmodl(input_file, output_file, external_refs, celsius=None) -> bool
         else:
             # Overwrite any existing default value with the given value.
             parameters['celsius'] = (celsius, '(degC)')
-            print_verbose(f'inline PARAMETER: celsius = {celsius} (degC)')
+            print(f'inline PARAMETER: celsius = {celsius} (degC)')
 
     # Inline Q10. Detect and inline assigned variables with known constant
     # values that are set in the initial block.
@@ -206,7 +212,7 @@ def optimize_nmodl(input_file, output_file, external_refs, celsius=None) -> bool
             can_exec = False
         except nmodl_to_python.ComplexityError:
             can_exec = False
-            print_verbose('warning: complex INITIAL block may prevent optimization')
+            print('warning: complex INITIAL block may prevent optimization')
         # 
         global_scope  = dict(nmodl_to_python.nmodl_builtins)
         initial_scope = {}
@@ -225,8 +231,8 @@ def optimize_nmodl(input_file, output_file, external_refs, celsius=None) -> bool
                 exec(x.pycode, global_scope, initial_scope)
             except Exception as error:
                 pycode = prepend_line_numbers(x.pycode.rstrip())
-                print_exception(error)
-                print_verbose("warning: could not execute INITIAL block:\n" + pycode)
+                print("warning: could not execute INITIAL block:\n" + pycode)
+                print("exception:", str(error))
                 initial_scope = {}
         # Find all of the variables which are written to during the runtime.
         # These variables obviously do not have a constant value.
@@ -246,7 +252,7 @@ def optimize_nmodl(input_file, output_file, external_refs, celsius=None) -> bool
                 # 
                 units = assigned_units[name]
                 assigned_const_value[name] = (value, units)
-                print_verbose(f'inline ASSIGNED with constant value: {name} = {value} {units}')
+                print(f'inline ASSIGNED with constant value: {name} = {value} {units}')
 
     # Convert assigned variables into local variables as able.
     assigned_to_local = set(assigned_vars) - set(external_vars) - set(assigned_const_value)
@@ -255,9 +261,13 @@ def optimize_nmodl(input_file, output_file, external_refs, celsius=None) -> bool
         assigned_to_local -= read_variables
     # 
     for name in assigned_to_local:
-        print_verbose(f'convert from ASSIGNED to LOCAL: {name}')
+        print(f'convert from ASSIGNED to LOCAL: {name}')
+
+
 
     ############################################################################
+    # Apply the optimizations.
+
 
     # Rewrite the NEURON block without the removed variables.
     if block := blocks.get('NEURON', None):
@@ -416,7 +426,6 @@ def optimize_nmodl(input_file, output_file, external_refs, celsius=None) -> bool
     # Break up very long lines into multiple lines as able.
     nmodl_text = re.sub(r'.{500}\b', lambda m: m.group() + '\n', nmodl_text)
 
-    print_verbose(f'write file: "{output_file}"')
     with output_file.open('w') as f:
         f.write(nmodl_text)
     return True

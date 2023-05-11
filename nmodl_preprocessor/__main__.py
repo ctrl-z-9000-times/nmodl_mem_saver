@@ -55,9 +55,9 @@ else:
     model_dir = None
 
 # Copy any C/C++ files that might have been included into the mechanisms.
-copy_files = []
+include_files = []
 if model_dir:
-    copy_files = (
+    include_files = (
             sorted(model_dir.glob('*.c')) +
             sorted(model_dir.glob('*.h')) +
             sorted(model_dir.glob('*.cpp')) +
@@ -75,30 +75,38 @@ for path in nmodl_files:
 for path in code_files:
     print(f'Source Code: {path}')
 
-for path in copy_files:
+for path in include_files:
     print(f'Include C/C++: {path}')
 
 # Search the projects source code.
-# Search for assignments to celsius in the code files.
-external_symbols = set() # Find all words used in the projects source code.
+references = {} # The set of words used in each projects file.
 temperatures = set() # Find all assignments to celsius.
 word_regex = re.compile(br'\b\w+\b')
 float_regex = br'[+-]?((\d+\.?\d*)|(\.\d+))\b([Ee][+-]?\d+)?\b'
 celsius_regex = re.compile(br'\bcelsius\s*=\s*' + float_regex)
-for path in code_files:
+for path in nmodl_files + code_files + include_files:
     with open(path, 'rb') as f:
         text = f.read()
     if path.suffix in {'.hoc', '.ses'}:
         text = re.sub(br'//.*', b'', text)
     if path.suffix == '.py':
         text = re.sub(br'#.*', b'', text)
+    words = set()
     for match in re.finditer(word_regex, text):
         try:
-            external_symbols.add(match.group().decode())
+            words.add(match.group().decode())
         except UnicodeDecodeError:
             pass
+    references[path] = words
+    # Search for assignments to celsius in the code files.
     for match in re.finditer(celsius_regex, text):
         temperatures.add(float(match.group().decode().partition('=')[2]))
+
+# 
+external_symbols = set()
+for path, words in references.items():
+    if path in code_files:
+        external_symbols.update(words)
 
 if "celsius" not in external_symbols:
     celsius = 6.3
@@ -117,15 +125,21 @@ else:
 # Process the NMODL files.
 for path in nmodl_files:
     if path.name == 'vecst.mod':
-        copy_files.append(path)
+        include_files.append(path)
         continue
+    # 
+    other_nmodl_refs = set()
+    for other_nmodl_file in nmodl_files:
+        if path != other_nmodl_file:
+            other_nmodl_refs.update(references[other_nmodl_file])
+    # 
     output_file = output_dir.joinpath(f'_opt_{path.name}')
-    okay = optimize_nmodl.optimize_nmodl(path, output_file, external_symbols, celsius)
+    okay = optimize_nmodl.optimize_nmodl(path, output_file, external_symbols, other_nmodl_refs, celsius)
     if not okay:
-        copy_files.append(path)
+        include_files.append(path)
 
 # Copy any C/C++ files that might have been included.
-for path in copy_files:
+for path in include_files:
     shutil.copy(path, output_dir.joinpath(path.name))
 
 _placeholder = lambda: None # Symbol for the CLI script to import and call.
