@@ -87,23 +87,28 @@ temperatures = set() # Find all assignments to celsius.
 float_regex = br'[+-]?((\d+\.?\d*)|(\.\d+))\b([Ee][+-]?\d+)?\b'
 celsius_regex = re.compile(br'\bcelsius\s*=\s*' + float_regex)
 for path in (nmodl_files + code_files + include_files):
-    with open(path, 'rb') as f:
-        text = f.read()
+    references[path] = words = set()
+    try:
+        with open(path, 'rb') as f:
+            text = f.read()
+    except OSError:
+        if path.suffix == '.mod':
+            raise
+        else:
+            continue
     # Remove line comments.
-    if path.suffix in {'.hoc', '.ses', '.h', '.c', '.hpp', '.cpp'}:
+    if path.suffix in ['.hoc', '.ses', '.h', '.c', '.hpp', '.cpp']:
         text = re.sub(br'//.*', b'', text)
-    if path.suffix in {'.py'}:
+    if path.suffix in ['.py']:
         text = re.sub(br'#.*', b'', text)
-    if path.suffix in {'.mod', '.inc'}:
+    if path.suffix in ['.mod', '.inc']:
         text = re.sub(br':.*', b'', text)
     # 
-    words = set()
     for match in re.finditer(word_regex, text):
         try:
             words.add(match.group().decode())
         except UnicodeDecodeError:
             pass
-    references[path] = words
     # Search for assignments to celsius in the code files.
     if path.suffix in {'.hoc', '.ses', '.py'}:
         for match in re.finditer(celsius_regex, text):
