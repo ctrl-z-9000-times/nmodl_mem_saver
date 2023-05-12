@@ -134,7 +134,7 @@ for path in include_files:
 # Process the NMODL files.
 for path in nmodl_files:
     if path.name in {'vecst.mod', 'stats.mod'}:
-        include_files.append(path)
+        shutil.copy(path, output_dir.joinpath(path.name))
         continue
     # 
     other_nmodl_refs = set()

@@ -60,13 +60,13 @@ def optimize_nmodl(input_file, output_file, external_refs, other_nmodl_refs, cel
         AST = nmodl.NmodlDriver().parse_string(nmodl_text)
     except RuntimeError as error:
         print("warning: could not parse file:", str(error))
-        shutil.copy(input_file, output_file)
+        shutil.copy(input_file, output_file.parent.joinpath(input_file.name))
         return
     try:
         nmodl.symtab.SymtabVisitor().visit_program(AST)
     except RuntimeError as error:
         print("warning: could not build symbol table:", str(error))
-        shutil.copy(input_file, output_file)
+        shutil.copy(input_file, output_file.parent.joinpath(input_file.name))
         return
 
     visitor = nmodl.dsl.visitor.AstLookupVisitor()
@@ -92,7 +92,7 @@ def optimize_nmodl(input_file, output_file, external_refs, other_nmodl_refs, cel
     verbatim_vars -= cpp_keywords
     if verbatim_length / len(nmodl_text) > .50:
         print('warning: too much VERBATIM, will not optimize')
-        shutil.copy(input_file, output_file)
+        shutil.copy(input_file, output_file.parent.joinpath(input_file.name))
         return
     # Let's get this warning out of the way. As chunks of arbitrary C/C++ code,
     # VERBATIM blocks can not be analysed. Assume that all symbols in VERBATIM
