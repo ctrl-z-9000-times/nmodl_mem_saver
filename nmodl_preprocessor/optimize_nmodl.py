@@ -54,6 +54,7 @@ def optimize_nmodl(input_file, output_file, external_refs, other_nmodl_refs, cel
 
     nmodl_text = clean_nmodl(nmodl_text)
     nmodl_text = nmodl_text.decode()
+    nmodl_text = ''.join(filter((lambda x: x.isprintable() or x.isspace()), nmodl_text))
 
     # Parse the nmodl file into an AST.
     try:
