@@ -38,7 +38,9 @@ if args.model_dir:
     nmodl_files = sorted(model_dir.glob('*.mod'))
 # Recursively search for the model directory.
 elif nmodl_files := sorted(project_dir.glob('**/*.mod')):
-    model_dir   = min((path.parent for path in nmodl_files), key=lambda path: len(path.parts))
+    model_dir   = set(path.parent for path in nmodl_files)
+    assert len(model_dir) == 1
+    model_dir   = model_dir.pop()
     nmodl_files = sorted(model_dir.glob('*.mod'))
 else:
     model_dir = None
@@ -66,10 +68,20 @@ if model_dir:
             sorted(model_dir.glob('*.inc')) )
 
 # 
-hoc_files  = sorted(project_dir.glob("**/*.hoc"))
+hoc_files  = sorted(project_dir.glob("**/*.hoc")) + sorted(project_dir.glob("**/*.oc"))
 ses_files  = sorted(project_dir.glob("**/*.ses"))
 py_files   = sorted(project_dir.glob("**/*.py"))
 code_files = hoc_files + ses_files + py_files
+
+misc_files  = set(project_dir.glob("**/*"))
+misc_files -= set(nmodl_files)
+misc_files -= set(code_files)
+misc_files -= set(include_files)
+misc_files  = sorted(misc_files)
+
+print(f"Project Directory: {project_dir}")
+print(f"Input Directory: {model_dir}")
+print(f"Output Directory: {output_dir}")
 
 for path in nmodl_files:
     print(f'Mechanism: {path}')
@@ -80,13 +92,16 @@ for path in include_files:
 for path in code_files:
     print(f'Source Code: {path}')
 
+for path in misc_files:
+    print(f'Misc File: {path}')
+
 # Search the projects source code.
 references = {} # The set of words used in each projects file.
 word_regex = re.compile(br'\b\w+\b')
 temperatures = set() # Find all assignments to celsius.
 float_regex = br'[+-]?((\d+\.?\d*)|(\.\d+))\b([Ee][+-]?\d+)?\b'
 celsius_regex = re.compile(br'\bcelsius\s*=\s*' + float_regex)
-for path in (nmodl_files + code_files + include_files):
+for path in (nmodl_files + code_files + include_files + misc_files):
     references[path] = words = set()
     try:
         with open(path, 'rb') as f:
@@ -96,12 +111,17 @@ for path in (nmodl_files + code_files + include_files):
             raise
         else:
             continue
+    if path in misc_files:
+        try:
+            text.decode()
+        except UnicodeDecodeError:
+            continue
     # Remove line comments.
-    if path.suffix in ['.hoc', '.ses', '.h', '.c', '.hpp', '.cpp']:
+    if path.suffix in ['.hoc', '.oc', '.ses', '.h', '.c', '.hpp', '.cpp']:
         text = re.sub(br'//.*', b'', text)
-    if path.suffix in ['.py']:
+    elif path.suffix in ['.py']:
         text = re.sub(br'#.*', b'', text)
-    if path.suffix in ['.mod', '.inc']:
+    elif path.suffix in ['.mod', '.inc']:
         text = re.sub(br':.*', b'', text)
     # 
     for match in re.finditer(word_regex, text):
@@ -116,7 +136,7 @@ for path in (nmodl_files + code_files + include_files):
 
 # 
 external_symbols = set()
-for path in (code_files + include_files):
+for path in (code_files + include_files + misc_files):
     external_symbols.update(references[path])
 
 if "celsius" not in external_symbols:
@@ -148,7 +168,7 @@ for path in nmodl_files:
             if path != other_nmodl_file:
                 other_nmodl_refs.update(references[other_nmodl_file])
     # 
-    output_file = output_dir.joinpath(f'_opt_{path.name}')
+    output_file = output_dir.joinpath(path.name)
     optimize_nmodl.optimize_nmodl(path, output_file, external_symbols, other_nmodl_refs, celsius)
 
 _placeholder = lambda: None # Symbol for the CLI script to import and call.

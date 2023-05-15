@@ -116,7 +116,10 @@ def optimize_nmodl(input_file, output_file, external_refs, other_nmodl_refs, cel
         nmodl.symtab.SymtabVisitor().visit_program(AST)
 
     # Find all external references to this mechanism.
-    suffix = '_' + STR(next(iter(lookup(ANT.SUFFIX))).get_node_name())
+    try:
+        suffix = '_' + STR(next(iter(lookup(ANT.SUFFIX))).get_node_name())
+    except StopIteration:
+        suffix = ''
     external_refs = set(external_refs) # Will mutate, don't alter the original version.
     for x in list(external_refs) + list(other_nmodl_refs):
         if x.endswith(suffix):
@@ -178,10 +181,18 @@ def optimize_nmodl(input_file, output_file, external_refs, other_nmodl_refs, cel
     # Split the document into its top-level blocks for easier manipulation.
     blocks_list = [SimpleNamespace(node=x, text=nmodl.to_nmodl(x)) for x in AST.blocks]
     blocks      = {get_block_name(x.node): x for x in blocks_list}
+    assert len(blocks) == len(blocks_list)
     # 
     if block := blocks.get('NET_RECEIVE', None):
         for x in visitor.lookup(block.node, ANT.INITIAL_BLOCK):
             blocks['NET_RECEIVE INITIAL'] = SimpleNamespace(node=x, text=nmodl.to_nmodl(x))
+
+    if True:
+        for block in blocks:
+            print("Top Level Block:", block)
+            if x := rw.reads.get(block, []):  print("Read Variables:",  ', '.join(sorted(x)))
+            if x := rw.writes.get(block, []): print("Write Variables:", ', '.join(sorted(x)))
+            if x := rw.maybes.get(block, []): print("Maybe Write Variables:", ', '.join(sorted(x)))
 
 
 
