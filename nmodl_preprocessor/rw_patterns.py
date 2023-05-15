@@ -7,8 +7,9 @@ class RW_Visitor(nmodl.dsl.visitor.AstVisitor):
         super().__init__()
         self.current_block = None
         # Maps from block name to set of symbol names.
-        self.reads = {}
-        self.writes = {}
+        self.reads  = {} # Symbols which are read-before-write.
+        self.writes = {} # Symbols which are written to (regardless of read status).
+        self.maybes = {} # Symbols which are written to (possibly only under certain run-time conditions).
         # Set of all variables which are assigned to.
         self.all_writes = set()
 
@@ -16,14 +17,18 @@ class RW_Visitor(nmodl.dsl.visitor.AstVisitor):
         node.visit_children(self)
         for block_name, var_names in self.writes.items():
             self.all_writes.update(var_names)
+        for block_name, var_names in self.maybes.items():
+            self.all_writes.update(var_names)
+            var_names.update(self.writes[block_name])
 
     def visit_statement_block(self, node):
         # Look for top level code blocks.
         if self.current_block is None:
             self.current_block = get_block_name(node.parent)
             parameters = set(STR(x.get_node_name()) for x in getattr(node.parent, 'parameters', []))
-            self.reads[self.current_block]  = parameters
+            self.reads [self.current_block] = parameters
             self.writes[self.current_block] = set()
+            self.maybes[self.current_block] = set()
             node.visit_children(self)
             self.current_block = None
         else:
@@ -33,8 +38,9 @@ class RW_Visitor(nmodl.dsl.visitor.AstVisitor):
         # Special case for initial blocks hiding inside of net receive blocks.
         if self.current_block == 'NET_RECEIVE':
             self.current_block = 'NET_RECEIVE INITIAL'
-            self.reads[self.current_block]  = set()
+            self.reads [self.current_block] = set()
             self.writes[self.current_block] = set()
+            self.maybes[self.current_block] = set()
             node.visit_children(self)
             self.current_block = 'NET_RECEIVE'
         else:
@@ -45,14 +51,16 @@ class RW_Visitor(nmodl.dsl.visitor.AstVisitor):
 
     def visit_diff_eq_expression(self, node):
         # The solver may move kinetic equations into different code blocks.
-        current_block = self.current_block
+        equation_block = self.current_block
         self.current_block = object()
-        self.reads[self.current_block]  = set()
+        self.reads [self.current_block] = set()
         self.writes[self.current_block] = set()
+        self.maybes[self.current_block] = set()
         node.visit_children(self)
-        self.reads[current_block]  |= self.reads.pop(self.current_block)
-        self.writes[current_block] |= self.writes.pop(self.current_block)
-        self.current_block = current_block
+        self.reads [equation_block] |= self.reads .pop(self.current_block)
+        self.writes[equation_block] |= self.writes.pop(self.current_block)
+        self.maybes[equation_block] |= self.maybes.pop(self.current_block)
+        self.current_block = equation_block
 
     def visit_binary_expression(self, node):
         if node.op.eval() == '=':
@@ -77,19 +85,27 @@ class RW_Visitor(nmodl.dsl.visitor.AstVisitor):
             elseif.condition.accept(self)
         # Collect all of the child blocks that are part of this if-else tree.
         blocks = [node.get_statement_block()] + node.elseifs + [node.elses]
-        visitors = []
-        for x in blocks:
-            if x is None: continue
-            # Make a new visitor and give it our current state.
-            visitors.append(inner := RW_Visitor())
-            inner.current_block              = self.current_block
-            inner.reads[self.current_block]  = set(self.reads[self.current_block])
-            inner.writes[self.current_block] = set(self.writes[self.current_block])
-            inner.visit_statement_block(x)
-        # Apply the results of the child visitors simultaneously.
-        for inner in visitors:
-            self.reads[self.current_block].update(inner.reads[self.current_block])
-            self.writes[self.current_block].update(inner.writes[self.current_block])
+        # Make new visitors and initialize them as copies of our current state.
+        for v in (visitors := [RW_Visitor() for branch in blocks]):
+            v.current_block              = self.current_block
+            v.reads[self.current_block]  = set(self.reads[self.current_block])
+            v.writes[self.current_block] = set(self.writes[self.current_block])
+            v.maybes[self.current_block] = set()
+        # Simultaneously visit all of the arms of the if-else tree.
+        for v, branch in zip(visitors, blocks):
+            if branch is not None: # Ignore any missing "else" blocks.
+                v.visit_statement_block(branch)
+        # Collect and combine the results.
+        # Any branch reading a symbol counts as a first-time read of the symbol.
+        for v in visitors:
+            self.reads[self.current_block].update(v.reads[self.current_block])
+        # All branches must write a symbol for it to count as being written to.
+        # Otherwise it *may be* written to.
+        branch_writes = [v.writes[self.current_block] for v in visitors]
+        self.writes[self.current_block].update(set.intersection(*branch_writes))
+        self.maybes[self.current_block].update(set.union(*branch_writes))
+        for v in visitors:
+            self.maybes[self.current_block].update(v.maybes[self.current_block])
 
     def visit_from_statement(self, node):
         name = STR(node.name.get_node_name())

@@ -181,7 +181,6 @@ def optimize_nmodl(input_file, output_file, external_refs, other_nmodl_refs, cel
     # Split the document into its top-level blocks for easier manipulation.
     blocks_list = [SimpleNamespace(node=x, text=nmodl.to_nmodl(x)) for x in AST.blocks]
     blocks      = {get_block_name(x.node): x for x in blocks_list}
-    assert len(blocks) == len(blocks_list)
     # 
     if block := blocks.get('NET_RECEIVE', None):
         for x in visitor.lookup(block.node, ANT.INITIAL_BLOCK):
@@ -190,9 +189,12 @@ def optimize_nmodl(input_file, output_file, external_refs, other_nmodl_refs, cel
     if True:
         for block in blocks:
             print("Top Level Block:", block)
-            if x := rw.reads.get(block, []):  print("Read Variables:",  ', '.join(sorted(x)))
-            if x := rw.writes.get(block, []): print("Write Variables:", ', '.join(sorted(x)))
-            if x := rw.maybes.get(block, []): print("Maybe Write Variables:", ', '.join(sorted(x)))
+            reads  = rw.reads.get(block, set())
+            writes = rw.writes.get(block, set())
+            maybes = rw.maybes.get(block, set()) - writes
+            if reads:  print("Read Variables:",  ', '.join(sorted(reads)))
+            if writes: print("Always Write Variables:", ', '.join(sorted(writes)))
+            if maybes: print("Maybe Write Variables:", ', '.join(sorted(maybes)))
 
 
 
@@ -262,7 +264,7 @@ def optimize_nmodl(input_file, output_file, external_refs, other_nmodl_refs, cel
         # Find all of the variables which are written to during the runtime.
         # These variables obviously do not have a constant value.
         runtime_writes_to = set()
-        for block_name, variables in rw.writes.items():
+        for block_name, variables in rw.maybes.items():
             if block_name != 'INITIAL':
                 runtime_writes_to.update(variables)
         # Search the local scope of the INITIAL block for variables which can be optimized away.
@@ -340,7 +342,7 @@ def optimize_nmodl(input_file, output_file, external_refs, other_nmodl_refs, cel
     # Insert new LOCAL statements to replace the removed assigned variables.
     new_locals = {} # Maps from block name to set of names of new local variables.
     new_locals['INITIAL'] = set(assigned_const_value.keys())
-    for block_name, write_variables in rw.writes.items():
+    for block_name, write_variables in rw.maybes.items():
         new_locals.setdefault(block_name, set()).update(assigned_to_local & write_variables)
     # 
     for block_name, local_names in new_locals.items():
