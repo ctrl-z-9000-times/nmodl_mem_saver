@@ -73,6 +73,8 @@ class RW_Visitor(nmodl.dsl.visitor.AstVisitor):
 
     def visit_if_statement(self, node):
         node.condition.accept(self)
+        for elseif in node.elseifs:
+            elseif.condition.accept(self)
         # Collect all of the child blocks that are part of this if-else tree.
         blocks = [node.get_statement_block()] + node.elseifs + [node.elses]
         visitors = []
