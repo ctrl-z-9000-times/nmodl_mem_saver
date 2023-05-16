@@ -362,6 +362,7 @@ def optimize_nmodl(input_file, output_file, external_refs, other_nmodl_refs, cel
     # Substitute the parameters with their values.
     substitutions = dict(parameters)
     substitutions.update(assigned_const_value)
+
     # Delete any references to the substituted symbols out of TABLE statements.
     # First setup a regex to find the TABLE statements.
     list_regex  = r'\w+(\s*,\s*\w+)*'
@@ -369,6 +370,7 @@ def optimize_nmodl(input_file, output_file, external_refs, other_nmodl_refs, cel
     table_regex = re.compile(table_regex)
     def rewrite_table_stmt(match):
         match = match.groupdict()
+        is_function_table = bool(match['table_vars'])
         # Process each list of variables and store them back into the dict.
         for section in ('table_vars', 'depend_vars'):
             var_list = match[section]
@@ -384,7 +386,7 @@ def optimize_nmodl(input_file, output_file, external_refs, other_nmodl_refs, cel
         # Rewrite the TABLE statement using the new lists of variables.
         table_vars  = match['table_vars']
         depend_vars = match['depend_vars']
-        if table_vars:
+        if table_vars or not is_function_table:
             if depend_vars:
                 return f'TABLE {table_vars} DEPEND {depend_vars} FROM' + match['tail']
             else:
