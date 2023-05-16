@@ -302,6 +302,15 @@ def optimize_nmodl(input_file, output_file, external_refs, other_nmodl_refs, cel
     # Apply the optimizations.
 
 
+    # Useful for debugging: do not intentionally apply any optimizations.
+    if False:
+        parameters = {}
+        assigned_const_value = {}
+        assigned_to_local = set()
+        print("debug mode: will not apply any optimizations")
+
+
+
     # Rewrite the NEURON block without the removed variables.
     if block := blocks.get('NEURON', None):
         new_block = "NEURON {\n"
