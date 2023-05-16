@@ -166,9 +166,7 @@ def optimize_nmodl(input_file, output_file, external_refs, other_nmodl_refs, cel
             electrode_cur_vars |
             state_vars |
             pointer_vars |
-            function_vars |
-            procedure_vars |
-            external_refs |
+            ((function_vars | procedure_vars | range_vars | global_vars | parameter_vars) & external_refs) |
             verbatim_vars)
     # Find the units associated with each assigned variable.
     assigned_units = {name: '' for name in assigned_vars}
