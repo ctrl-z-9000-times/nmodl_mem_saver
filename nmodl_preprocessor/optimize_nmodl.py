@@ -141,8 +141,8 @@ def optimize_nmodl(input_file, output_file, external_refs, other_nmodl_refs, cel
     assigned_vars       = get_vars_with_prop(sym_type.assigned_definition)
     state_vars          = get_vars_with_prop(sym_type.state_var)
     pointer_vars        = get_vars_with_prop(sym_type.pointer_var) | get_vars_with_prop(sym_type.bbcore_pointer_var)
-    functions           = get_vars_with_prop(sym_type.function_block)
-    procedures          = get_vars_with_prop(sym_type.procedure_block)
+    function_vars       = get_vars_with_prop(sym_type.function_block)
+    procedure_vars      = get_vars_with_prop(sym_type.procedure_block)
     reaction_vars       = set(STR(x.get_node_name()) for x in lookup(ANT.REACT_VAR_NAME))
     compartment_vars    = set()
     for c in lookup(ANT.COMPARTMENT):
@@ -166,8 +166,8 @@ def optimize_nmodl(input_file, output_file, external_refs, other_nmodl_refs, cel
             electrode_cur_vars |
             state_vars |
             pointer_vars |
-            functions |
-            procedures |
+            function_vars |
+            procedure_vars |
             external_refs |
             verbatim_vars)
     # Find the units associated with each assigned variable.
@@ -186,7 +186,13 @@ def optimize_nmodl(input_file, output_file, external_refs, other_nmodl_refs, cel
         for x in visitor.lookup(block.node, ANT.INITIAL_BLOCK):
             blocks['NET_RECEIVE INITIAL'] = SimpleNamespace(node=x, text=nmodl.to_nmodl(x))
 
+
+    # Useful for debugging.
     if True:
+        symbols = {k:v for k,v in locals().items() if k.endswith('_vars')}
+        for name, symbols in sorted(symbols.items()):
+            if name == 'external_vars': continue
+            if symbols: print((name + ':').ljust(20), ', '.join(sorted(symbols)))
         for block in blocks:
             print("Top Level Block:", block)
             reads  = rw.reads.get(block, set())
@@ -224,7 +230,7 @@ def optimize_nmodl(input_file, output_file, external_refs, other_nmodl_refs, cel
         else:
             # Overwrite any existing default value with the given value.
             parameters['celsius'] = (celsius, '(degC)')
-            print(f'inline PARAMETER: celsius = {celsius} (degC)')
+            print(f'inline TEMPERATURE: celsius = {celsius} (degC)')
 
     # Inline Q10. Detect and inline assigned variables with known constant
     # values that are set in the initial block.
