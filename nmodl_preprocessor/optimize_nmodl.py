@@ -186,7 +186,7 @@ def optimize_nmodl(input_file, output_file, external_refs, other_nmodl_refs, cel
 
 
     # Useful for debugging.
-    if True:
+    if False:
         symbols = {k:v for k,v in locals().items() if k.endswith('_vars')}
         for name, symbols in sorted(symbols.items()):
             if name == 'external_vars': continue
@@ -241,9 +241,9 @@ def optimize_nmodl(input_file, output_file, external_refs, other_nmodl_refs, cel
             can_exec = True
         except nmodl_to_python.VerbatimError:
             can_exec = False
-        except nmodl_to_python.ComplexityError:
+        except nmodl_to_python.ComplexityError as error:
             can_exec = False
-            print('warning: complex INITIAL block may prevent optimization')
+            print('warning: complex INITIAL block may prevent optimization:', error.args[0])
         # 
         global_scope  = dict(nmodl_to_python.nmodl_builtins)
         initial_scope = {}
@@ -300,8 +300,9 @@ def optimize_nmodl(input_file, output_file, external_refs, other_nmodl_refs, cel
     # Apply the optimizations.
 
 
-    # Useful for debugging: do not intentionally apply any optimizations.
+    # Useful for debugging.
     if False:
+        # Do not intentionally apply any optimizations.
         parameters = {}
         assigned_const_value = {}
         assigned_to_local = set()

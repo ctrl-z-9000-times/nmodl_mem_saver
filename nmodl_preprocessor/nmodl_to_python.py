@@ -117,14 +117,14 @@ class PyGenerator(nmodl.dsl.visitor.AstVisitor):
         if name in nmodl_builtins:
             pass
         elif name == "net_send":
-            raise ComplexityError()
+            raise ComplexityError(f'call {name}')
         else:
             # All functions and procedures should have been inlined already.
             # The exceptions mostly involve TABLE statements.
             # I could attempt to evaluate these calls, but that would be very
             # complicated, especially because python does not support ASSIGNED
             # variables, which would need to be communicated back to the caller.
-            raise ComplexityError()
+            raise ComplexityError(f'call {name}')
         # 
         self.pycode += name + "("
         for arg in node.arguments:
@@ -134,8 +134,8 @@ class PyGenerator(nmodl.dsl.visitor.AstVisitor):
 
     def visit_while_statement(self, node):
         # Can not guarantee correct results BC the condition might reference unknown values.
-        raise ComplexityError()
+        raise ComplexityError('while_statement')
 
     def visit_indexed_name(self, node):
-        raise ComplexityError()
+        raise ComplexityError('indexed_name')
 

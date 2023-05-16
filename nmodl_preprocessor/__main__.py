@@ -77,6 +77,7 @@ misc_files  = set(project_dir.glob("**/*"))
 misc_files -= set(nmodl_files)
 misc_files -= set(code_files)
 misc_files -= set(include_files)
+misc_files = {x for x in misc_files if x.suffix not in {'.png', '.jpg', '.html', '.md', '.pdf'}}
 misc_files  = sorted(misc_files)
 
 print(f"Project Directory: {project_dir}")
