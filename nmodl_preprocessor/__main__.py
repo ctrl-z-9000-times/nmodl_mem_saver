@@ -18,7 +18,7 @@ parser.add_argument('project_dir', type=str,
 
 parser.add_argument('model_dir', type=str,
         nargs='?',
-        help="input mechanisms directory")
+        help="input directory for nmodl files")
 
 parser.add_argument('output_dir', type=str,
         help="output directory for nmodl files")

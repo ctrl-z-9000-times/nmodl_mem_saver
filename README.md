@@ -23,24 +23,21 @@ pip install nmodl_preprocessor
 
 ## Usage
 ```
-$ nmodl_preprocessor [-h] [--celsius CELSIUS] input_path output_path
+$ nmodl_preprocessor [-h] project_dir [model_dir] output_dir
 
 positional arguments:
-  input_path         input filename or directory of nmodl files
-  output_path        output filename or directory for nmodl files
+  project_dir  root directory for all simulation files
+  model_dir    input directory for nmodl files
+  output_dir   output directory for nmodl files
 
 options:
-  -h, --help         show this help message and exit
-  --celsius CELSIUS  temperature of the simulation
+  -h, --help   show this help message and exit
 
 ```
 
 ## Tips
 
-* This program will not optimize any RANGE or GLOBAL symbols.  
-  - Remove them unless you actually need to inspect or modify
-    their value at run-time.  
-  - Add parameters to a GLOBAL statement to preserve them.  
+* Use unique and descriptive variable names.  
 
 * Remove unnecessary VERBATIM statements.  
 
