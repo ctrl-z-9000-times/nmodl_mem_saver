@@ -1,8 +1,10 @@
 from pathlib import Path
 from sys import stderr
 import argparse
+import os
 import re
 import shutil
+import subprocess
 
 from nmodl_preprocessor import optimize_nmodl
 
@@ -19,9 +21,6 @@ parser.add_argument('project_dir', type=str,
 parser.add_argument('model_dir', type=str,
         nargs='?',
         help="input directory for nmodl files")
-
-parser.add_argument('output_dir', type=str,
-        help="output directory for nmodl files")
 
 args = parser.parse_args()
 
@@ -46,9 +45,8 @@ else:
     model_dir = None
 
 # Setup the output directory.
-output_dir = Path(args.output_dir).resolve()
+output_dir = project_dir.joinpath('.preprocessed')
 if not output_dir.exists():
-    assert output_dir.parent.is_dir(), f'directory not found: {output_dir.parent}'
     output_dir.mkdir()
 else:
     assert output_dir.is_dir(), "output_dir is not a directory"
@@ -74,6 +72,7 @@ py_files   = sorted(project_dir.glob("**/*.py"))
 code_files = hoc_files + ses_files + py_files
 
 misc_files  = set(project_dir.glob("**/*"))
+misc_files  = {x for x in misc_files if x.is_file()}
 misc_files -= set(nmodl_files)
 misc_files -= set(code_files)
 misc_files -= set(include_files)
@@ -81,7 +80,7 @@ misc_files = {x for x in misc_files if x.suffix not in {'.png', '.jpg', '.html',
 misc_files  = sorted(misc_files)
 
 print(f"Project Directory: {project_dir}")
-print(f"Input Directory: {model_dir}")
+print(f"Model Directory: {model_dir}")
 print(f"Output Directory: {output_dir}")
 
 for path in nmodl_files:
@@ -112,19 +111,24 @@ for path in (nmodl_files + code_files + include_files + misc_files):
             raise
         else:
             continue
+    # Ignore binary files (anything that's not valid utf-8).
     if path in misc_files:
         try:
             text.decode()
         except UnicodeDecodeError:
             continue
     # Remove line comments.
+    # TODO: Also remove multi-line comments.
     if path.suffix in ['.hoc', '.oc', '.ses', '.h', '.c', '.hpp', '.cpp']:
         text = re.sub(br'//.*', b'', text)
     elif path.suffix in ['.py']:
         text = re.sub(br'#.*', b'', text)
     elif path.suffix in ['.mod', '.inc']:
         text = re.sub(br':.*', b'', text)
-    # 
+    # TODO: Special cases for NMODL VERBATIM statements, which can access more
+    # symbols than regular NMODL code.
+    pass
+    # Scan for words.
     for match in re.finditer(word_regex, text):
         try:
             words.add(match.group().decode())
@@ -171,6 +175,14 @@ for path in nmodl_files:
     # 
     output_file = output_dir.joinpath(path.name)
     optimize_nmodl.optimize_nmodl(path, output_file, external_symbols, other_nmodl_refs, celsius)
+
+# Compile the NMODL files into the special linked library using nrnivmodl.
+env = os.environ
+env["MAKEFLAGS"] = " --max-load 0.0"
+subprocess.run(["nrnivmodl", str(output_dir)],
+        cwd=project_dir,
+        env=env,
+        check=True,)
 
 _placeholder = lambda: None # Symbol for the CLI script to import and call.
 

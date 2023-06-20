@@ -215,9 +215,9 @@ def optimize_nmodl(input_file, output_file, external_refs, other_nmodl_refs, cel
                 units = ('('+STR(node.unit.name)+')') if node.unit else ''
                 parameters[name] = (value, units)
                 if node.is_param_assign():
-                    print(f'inline PARAMETER: {name} = {value} {units}')
+                    print(f'hardcode PARAMETER: {name} = {value} {units}')
                 elif node.is_constant_var():
-                    print(f'inline CONSTANT: {name} = {value} {units}')
+                    print(f'hardcode CONSTANT: {name} = {value} {units}')
                 else:
                     raise RuntimeError(type(node))
 
@@ -228,7 +228,7 @@ def optimize_nmodl(input_file, output_file, external_refs, other_nmodl_refs, cel
         else:
             # Overwrite any existing default value with the given value.
             parameters['celsius'] = (celsius, '(degC)')
-            print(f'inline TEMPERATURE: celsius = {celsius} (degC)')
+            print(f'hardcode TEMPERATURE: celsius = {celsius} (degC)')
 
     # Inline Q10. Detect and inline assigned variables with known constant
     # values that are set in the initial block.
@@ -283,7 +283,7 @@ def optimize_nmodl(input_file, output_file, external_refs, other_nmodl_refs, cel
                 # 
                 units = assigned_units[name]
                 assigned_const_value[name] = (value, units)
-                print(f'inline ASSIGNED with constant value: {name} = {value} {units}')
+                print(f'hardcode ASSIGNED with constant value: {name} = {value} {units}')
 
     # Convert assigned variables into local variables as able.
     assigned_to_local = set(assigned_vars) - set(external_vars) - set(assigned_const_value)
