@@ -23,12 +23,11 @@ pip install nmodl_preprocessor
 
 ## Usage
 ```
-$ nmodl_preprocessor [-h] project_dir [model_dir] output_dir
+$ nmodl_preprocessor [-h] project_dir [model_dir ...]
 
 positional arguments:
-  project_dir  root directory for all simulation files
-  model_dir    input directory for nmodl files
-  output_dir   output directory for nmodl files
+  project_dir  root directory of all simulation files
+  model_dir    input directory of nmodl files
 
 options:
   -h, --help   show this help message and exit

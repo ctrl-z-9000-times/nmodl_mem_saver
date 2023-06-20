@@ -16,11 +16,11 @@ parser = argparse.ArgumentParser(prog='nmodl_preprocessor',
     formatter_class=argparse.RawDescriptionHelpFormatter)
 
 parser.add_argument('project_dir', type=str,
-        help="root directory for all simulation files")
+        help="root directory of all simulation files")
 
 parser.add_argument('model_dir', type=str,
-        nargs='?',
-        help="input directory for nmodl files")
+        nargs='*',
+        help="input directory of nmodl files")
 
 args = parser.parse_args()
 
@@ -41,9 +41,18 @@ if args.model_dir:
         nmodl_files.extend(path.glob('*.mod'))
     nmodl_files.sort()
 # Use the project_dir by default.
-else:
+elif nmodl_files := sorted(project_dir.glob('*.mod')):
     model_dir = [project_dir]
-    nmodl_files = sorted(project_dir.glob('*.mod'))
+# Recursively search for the model directory.
+elif nmodl_files := list(project_dir.glob('**/*.mod')):
+    model_dir = sorted(set(path.parent for path in nmodl_files))
+    assert len(model_dir) == 1, "Multiple nmodl directories found"
+    nmodl_files = sorted(model_dir[0].glob('*.mod'))
+# Quietly do nothing.
+else:
+    model_dir = []
+    nmodl_files = []
+
 
 # Setup the output directory.
 output_dir = project_dir.joinpath('.preprocessed')
@@ -188,7 +197,7 @@ stderr.flush()
 # Compile the NMODL files into the special linked library using nrnivmodl.
 env = os.environ
 env["MAKEFLAGS"] = " --max-load 0.0"
-status = subprocess.run(["nrnivmodl", str(output_dir)],
+subprocess.run(["nrnivmodl"] + [str(x) for x in output_dir.glob("*.mod")],
         cwd=project_dir,
         env=env,
         check=True,)
