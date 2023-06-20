@@ -1,4 +1,3 @@
-from sys import stderr
 from types import SimpleNamespace
 from pathlib import Path
 import math

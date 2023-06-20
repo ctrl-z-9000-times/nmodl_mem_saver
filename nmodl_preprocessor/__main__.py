@@ -1,5 +1,5 @@
 from pathlib import Path
-from sys import stderr
+from sys import stdout, stderr
 import argparse
 import os
 import re
@@ -98,6 +98,9 @@ for path in code_files:
 for path in misc_files:
     print(f'Misc File: {path}')
 
+stdout.flush()
+stderr.flush()
+
 # Search the projects source code.
 references = {} # The set of words used in each projects file.
 word_regex = re.compile(br'\b\w+\b')
@@ -179,13 +182,18 @@ for path in nmodl_files:
     output_file = output_dir.joinpath(path.name)
     optimize_nmodl.optimize_nmodl(path, output_file, external_symbols, other_nmodl_refs, celsius)
 
+stdout.flush()
+stderr.flush()
+
 # Compile the NMODL files into the special linked library using nrnivmodl.
 env = os.environ
 env["MAKEFLAGS"] = " --max-load 0.0"
-subprocess.run(["nrnivmodl", str(output_dir)],
+status = subprocess.run(["nrnivmodl", str(output_dir)],
         cwd=project_dir,
         env=env,
         check=True,)
+
+os.sync()
 
 _placeholder = lambda: None # Symbol for the CLI script to import and call.
 
