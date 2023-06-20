@@ -31,18 +31,19 @@ assert project_dir.exists(), f'directory not found: "{project_dir}"'
 assert project_dir.is_dir(), "project_dir is not a directory"
 
 # Find all of the mechanism files.
+# Check the command line arguments.
+args.model_dir = [x for x in args.model_dir if x.strip()]
 if args.model_dir:
-    model_dir = Path(args.model_dir).resolve()
-    assert model_dir.exists(), f'directory not found: "{model_dir}"'
-    nmodl_files = sorted(model_dir.glob('*.mod'))
-# Recursively search for the model directory.
-elif nmodl_files := sorted(project_dir.glob('**/*.mod')):
-    model_dir   = set(path.parent for path in nmodl_files)
-    assert len(model_dir) == 1
-    model_dir   = model_dir.pop()
-    nmodl_files = sorted(model_dir.glob('*.mod'))
+    model_dir = [Path(x).resolve() for x in args.model_dir]
+    nmodl_files = []
+    for path in model_dir:
+        assert path.exists(), f'directory not found: "{path}"'
+        nmodl_files.extend(path.glob('*.mod'))
+    nmodl_files.sort()
+# Use the project_dir by default.
 else:
-    model_dir = None
+    model_dir = [project_dir]
+    nmodl_files = sorted(project_dir.glob('*.mod'))
 
 # Setup the output directory.
 output_dir = project_dir.joinpath('.preprocessed')
@@ -57,13 +58,13 @@ else:
 
 # Copy any C/C++ files that might have been included into the mechanisms.
 include_files = []
-if model_dir:
-    include_files = (
-            sorted(model_dir.glob('*.c')) +
-            sorted(model_dir.glob('*.h')) +
-            sorted(model_dir.glob('*.cpp')) +
-            sorted(model_dir.glob('*.hpp')) +
-            sorted(model_dir.glob('*.inc')) )
+for path in model_dir:
+    include_files.extend(path.glob('*.c'))
+    include_files.extend(path.glob('*.h'))
+    include_files.extend(path.glob('*.cpp'))
+    include_files.extend(path.glob('*.hpp'))
+    include_files.extend(path.glob('*.inc'))
+include_files.sort()
 
 # 
 hoc_files  = sorted(project_dir.glob("**/*.hoc")) + sorted(project_dir.glob("**/*.oc"))
@@ -73,6 +74,7 @@ code_files = hoc_files + ses_files + py_files
 
 misc_files  = set(project_dir.glob("**/*"))
 misc_files  = {x for x in misc_files if x.is_file()}
+misc_files  = {x for x in misc_files if x.suffix != ".mod"}
 misc_files -= set(nmodl_files)
 misc_files -= set(code_files)
 misc_files -= set(include_files)
@@ -80,7 +82,8 @@ misc_files = {x for x in misc_files if x.suffix not in {'.png', '.jpg', '.html',
 misc_files  = sorted(misc_files)
 
 print(f"Project Directory: {project_dir}")
-print(f"Model Directory: {model_dir}")
+for x in model_dir:
+    print(f"Model Directory: {x}")
 print(f"Output Directory: {output_dir}")
 
 for path in nmodl_files:
