@@ -1,0 +1,24 @@
+
+
+$ py diff_perf.py original.json preprocessed.json
+Num Models: 762
+Num Measurements: 99
+Min Run Time: 1 seconds
+Speedup:
+Min -6.25 %
+Max 30.8 %
+Avg 4.68 %
+Std 7.34 %
+
+
+Notes:
+
+121600 - expected differences in stdout
+
+3454 50207 51196 74298 86537 108459 112834 116835 122329 206267 235769 244414 266578 - insignificant differences in gout
+
+3805 - sometimes cant open display (related to --virtual flag?)
+
+187473 - leaves a matplotlib window open, does not close when it finishes running
+
+
