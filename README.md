@@ -1,6 +1,7 @@
 # nmodl_preprocessor
 
 This program optimizes NMODL files for the NEURON simulator.  
+It scans all of your project's files to perform aggressive whole program optimization.  
 It performs the following optimizations to ".mod" files:  
 * Hardcode the parameters
 * Hardcode the temperature
@@ -8,8 +9,8 @@ It performs the following optimizations to ".mod" files:
 * Inline all functions and procedures
 * Convert assigned variables into local variables
 
-These optimizations can improve run-time performance and memory usage by as much
-as 15%.
+These optimizations can improve run-time performance and memory usage by between
+5% and 15%.
 
 ## Installation
 
@@ -35,6 +36,8 @@ options:
 ```
 
 ## Tips
+
+* Keep your projects in separate directories.  
 
 * Use unique and descriptive variable names.  
 
