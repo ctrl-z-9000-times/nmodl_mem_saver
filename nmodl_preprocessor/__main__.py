@@ -2,6 +2,7 @@ from pathlib import Path
 from sys import stdout, stderr
 import argparse
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -81,34 +82,17 @@ ses_files  = sorted(project_dir.glob("**/*.ses"))
 py_files   = sorted(project_dir.glob("**/*.py"))
 code_files = hoc_files + ses_files + py_files
 
+ignore_misc = {".mod", ".o", ".pyc", '.png', '.jpg', '.html', '.md', '.pdf'}
 misc_files  = set(project_dir.glob("**/*"))
 misc_files  = {x for x in misc_files if x.is_file()}
-misc_files  = {x for x in misc_files if x.suffix != ".mod"}
+misc_files  = {x for x in misc_files if not any(c.startswith('.') for c in x.parts)}
+misc_files  = {x for x in misc_files if not any(c.startswith('__') for c in x.parts)}
+misc_files  = {x for x in misc_files if not any(c == platform.machine() for c in x.parts)}
+misc_files  = {x for x in misc_files if x.suffix not in ignore_misc}
 misc_files -= set(nmodl_files)
 misc_files -= set(code_files)
 misc_files -= set(include_files)
-misc_files = {x for x in misc_files if x.suffix not in {'.png', '.jpg', '.html', '.md', '.pdf'}}
 misc_files  = sorted(misc_files)
-
-print(f"Project Directory: {project_dir}")
-for x in model_dir:
-    print(f"Model Directory: {x}")
-print(f"Output Directory: {output_dir}")
-
-for path in nmodl_files:
-    print(f'Mechanism: {path}')
-
-for path in include_files:
-    print(f'Include: {path}')
-
-for path in code_files:
-    print(f'Source Code: {path}')
-
-for path in misc_files:
-    print(f'Misc File: {path}')
-
-stdout.flush()
-stderr.flush()
 
 # Search the projects source code.
 references = {} # The set of words used in each projects file.
@@ -125,12 +109,16 @@ for path in (nmodl_files + code_files + include_files + misc_files):
         if path.suffix == '.mod':
             raise
         else:
+            if path in include_files: include_files.remove(path)
+            if path in code_files:    code_files.remove(path)
+            if path in misc_files:    misc_files.remove(path)
             continue
     # Ignore binary files (anything that's not valid utf-8).
     if path in misc_files:
         try:
             text.decode()
         except UnicodeDecodeError:
+            misc_files.remove(path)
             continue
     # Remove line comments.
     # TODO: Also remove multi-line comments.
@@ -153,6 +141,26 @@ for path in (nmodl_files + code_files + include_files + misc_files):
     if path.suffix in {'.hoc', '.ses', '.py'}:
         for match in re.finditer(celsius_regex, text):
             temperatures.add(float(match.group().decode().partition('=')[2]))
+
+print(f"Project Directory: {project_dir}")
+for x in model_dir:
+    print(f"Model Directory: {x}")
+print(f"Output Directory: {output_dir}")
+
+for path in nmodl_files:
+    print(f'Mechanism: {path}')
+
+for path in include_files:
+    print(f'Include: {path}')
+
+for path in code_files:
+    print(f'Source Code: {path}')
+
+for path in misc_files:
+    print(f'Misc File: {path}')
+
+stdout.flush()
+stderr.flush()
 
 # 
 external_symbols = set()
@@ -191,8 +199,8 @@ for path in nmodl_files:
     output_file = output_dir.joinpath(path.name)
     optimize_nmodl.optimize_nmodl(path, output_file, external_symbols, other_nmodl_refs, celsius)
 
-stdout.flush()
-stderr.flush()
+    stdout.flush()
+    stderr.flush()
 
 # Compile the NMODL files into the special linked library using nrnivmodl.
 env = os.environ
