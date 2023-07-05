@@ -37,6 +37,10 @@ options:
 
 ## Tips
 
+* Always check your results for accuracy and correctness.
+
+* Do not use this tool with neuron's graphical user interface "nrngui".
+
 * Keep your projects in separate directories.  
 
 * Use unique and descriptive variable names.  
