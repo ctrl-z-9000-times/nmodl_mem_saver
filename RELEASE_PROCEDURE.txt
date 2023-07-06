@@ -1,0 +1,14 @@
+LOCAL INSTALL
+
+cd repo
+py -m build --no-isolation && pip install .
+
+
+RELEASE INSTRUCTIONS
+
+cd repo
+rm -rf nmodl_preprocessor.egg-info dist/
+py -m build --no-isolation
+larth
+py -m twine check dist/*
+py -m twine upload dist/*
